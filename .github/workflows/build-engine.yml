@@ -1,0 +1,83 @@
+name: Build libmkxp-z (arm64-v8a)
+
+on:
+  push:
+    branches:
+      - 'engine/build'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build engine shared library
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+
+    env:
+      ANDROID_NDK_VERSION: 23.2.8568313
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            build-essential cmake curl xxd \
+            ruby-full autoconf automake libtool pkg-config \
+            python3 git unzip
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK ${{ env.ANDROID_NDK_VERSION }}
+        run: |
+          sdkmanager --install "ndk;${{ env.ANDROID_NDK_VERSION }}"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${{ env.ANDROID_NDK_VERSION }}" >> "$GITHUB_ENV"
+
+      - name: Export NDK toolchain
+        run: |
+          ARCH=linux-x86_64
+          NDK_PATH="$ANDROID_HOME/ndk/${{ env.ANDROID_NDK_VERSION }}"
+          echo "ARCH=$ARCH" >> "$GITHUB_ENV"
+          echo "$NDK_PATH/toolchains/llvm/prebuilt/$ARCH/bin" >> "$GITHUB_PATH"
+
+      - name: Fetch third-party sources
+        working-directory: app/jni
+        run: |
+          chmod +x get_deps.sh
+          ./get_deps.sh
+          cd mkxp-z
+          chmod +x make_xxd.sh
+          ./make_xxd.sh
+
+      - name: Build third-party libraries (arm64-v8a)
+        working-directory: app/jni
+        run: |
+          HOST=aarch64-linux-android \
+          TARGET=aarch64-linux-android \
+          ABI=arm64-v8a \
+          make -j$(nproc)
+
+      - name: Build libmkxp-z.so
+        working-directory: app/jni
+        run: |
+          "$ANDROID_NDK_HOME/ndk-build" \
+            NDK_PROJECT_PATH=. \
+            APP_BUILD_SCRIPT=Android.mk \
+            NDK_APPLICATION_MK=Application.mk \
+            APP_ABI=arm64-v8a \
+            -j$(nproc)
+
+      - name: Show build output
+        working-directory: app/jni
+        run: |
+          ls -la libs/arm64-v8a/ || true
+          find . -name "libmkxp-z.so" -maxdepth 4
+
+      - name: Upload shared libraries
+        uses: actions/upload-artifact@v4
+        with:
+          name: mkxp-z-libs-arm64
+          path: app/jni/libs/arm64-v8a/*.so
+          retention-days: 30
