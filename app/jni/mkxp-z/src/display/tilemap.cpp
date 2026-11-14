@@ -65,8 +65,14 @@ static const int atAreaW = autotileW * atFrames;
 
 static const int tsLaneW = tilesetW / 1;
 
-/* Map viewport size */
-static const int viewpW = 21;
+/* Map viewport size
+ *
+ * viewpW used to be 21, sized for the classic 640x480 canvas (20x15 tiles
+ * plus one tile of slack). A canvas wider than that would stop drawing past
+ * column 21 and leave the rest of the row empty, so it now covers a full
+ * 1280px canvas (40x15). The extra quads land outside the viewport on narrow
+ * canvases and are discarded by the GPU. */
+static const int viewpW = 41;
 static const int viewpH = 16;
 
 static const size_t zlayersMax = viewpH + 5;
@@ -780,8 +786,6 @@ struct TilemapPrivate
 
 		int ox = viewpPos.x;
 		int oy = viewpPos.y;
-		int mapW = mapData->xSize();
-		int mapH = mapData->ySize();
 
 		int minX = 0;
 		int minY = 0;
@@ -793,6 +797,8 @@ struct TilemapPrivate
 		// There could be off-by-one issues in these couple sections.
 		int maxX = viewpW;
 		int maxY = viewpH;
+		int mapW = mapData->xSize();
+		int mapH = mapData->ySize();
 		if (ox + maxX >= mapW)
 			maxX = mapW - ox - 1;
 		if (oy + maxY >= mapH)
