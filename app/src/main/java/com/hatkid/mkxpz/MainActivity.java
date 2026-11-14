@@ -256,6 +256,13 @@ public class MainActivity extends SDLActivity
             mGamepadInvisible = false;
         }
 
+        // TouchLayer owns all touch input: joystick / action gestures become
+        // held SDL keys, tap gestures become synthetic real mouse events.
+        // Nothing is forwarded to SDLSurface, so SDL never sees a joystick
+        // finger and a tap pointer can never be misattributed.
+        if (mGamepad.handleTouch(evt))
+            return true;
+
         return super.dispatchTouchEvent(evt);
     }
 

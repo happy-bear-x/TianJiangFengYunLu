@@ -1,0 +1,344 @@
+package com.hatkid.mkxpz.gamepad;
+
+import android.content.Context;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.os.Handler;
+import android.os.Looper;
+import android.util.AttributeSet;
+import android.view.KeyEvent;
+import android.view.MotionEvent;
+import android.view.View;
+
+import org.libsdl.app.SDLActivity;
+
+/**
+ * Unified touch input for the RGSS game.
+ *
+ * Two gesture families are handled here, in Java, so they never reach SDL:
+ *   - a floating joystick: press anywhere in the lower-left zone, the knob
+ *     follows the finger, and 8 directions (including diagonals) are sent as
+ *     held DPAD keys. Diagonals hold BOTH keys at once; the game reads them
+ *     through Input.dir8 and calls the built-in diagonal move methods.
+ *   - two action buttons (confirm / cancel) in the lower-right zone.
+ *
+ * Every other pointer is turned into a synthetic, REAL SDL mouse event
+ * (not a touch-synthesized one). Those drive Input.mouse_x / mouse_y and
+ * Input::MOUSELEFT, which the injected Ruby touch layer uses for menu
+ * hit-testing. TouchLayer consumes the whole MotionEvent so SDL never sees
+ * a joystick finger: SDL would otherwise synthesize a mouse from the first
+ * finger only and menu taps would be attributed to the wrong pointer.
+ */
+public class TouchLayer extends View
+{
+    private static final int DIR_UP    = 1;
+    private static final int DIR_DOWN  = 2;
+    private static final int DIR_LEFT  = 4;
+    private static final int DIR_RIGHT = 8;
+
+    private static final int KEY_CONFIRM = KeyEvent.KEYCODE_C;
+    private static final int KEY_CANCEL  = KeyEvent.KEYCODE_X;
+
+    private int mWidth, mHeight;
+    private float mJoyRadius, mDeadZone;
+    private float mBtnRadius;
+    private float mConfirmX, mConfirmY, mCancelX, mCancelY;
+
+    private int mJoyPointer = -1;
+    private int mBtnPointer = -1;
+    private int mTapPointer = -1;
+    private int mBtnKey = 0;
+    private int mTapSeq = 0;
+    private final Handler mHandler = new Handler(Looper.getMainLooper());
+    private int mDirMask = 0;
+    private float mJoyCx, mJoyCy, mJoyKx, mJoyKy;
+
+    private final Paint mFill = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint mStroke = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint mText = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+    public TouchLayer(Context context) { super(context); init(); }
+    public TouchLayer(Context context, AttributeSet attrs) { super(context, attrs); init(); }
+    public TouchLayer(Context context, AttributeSet attrs, int defStyleAttr) {
+        super(context, attrs, defStyleAttr); init();
+    }
+
+    private void init()
+    {
+        setClickable(false);
+        setFocusable(false);
+        mStroke.setStyle(Paint.Style.STROKE);
+        mStroke.setStrokeWidth(3f);
+        mText.setTextAlign(Paint.Align.CENTER);
+        mText.setColor(Color.argb(210, 255, 255, 255));
+    }
+
+    @Override
+    protected void onSizeChanged(int w, int h, int oldW, int oldH)
+    {
+        mWidth = w;
+        mHeight = h;
+        float base = Math.min(w, h);
+        mJoyRadius = base * 0.13f;
+        mDeadZone = mJoyRadius * 0.18f;
+        mBtnRadius = base * 0.075f;
+        mText.setTextSize(mBtnRadius * 0.62f);
+        mConfirmX = w * 0.90f;
+        mConfirmY = h * 0.70f;
+        mCancelX = w * 0.78f;
+        mCancelY = h * 0.87f;
+    }
+
+    private boolean inJoystickZone(float x, float y)
+    {
+        return x < mWidth * 0.34f && y > mHeight * 0.40f;
+    }
+
+    private int hitActionButton(float x, float y)
+    {
+        float r2 = mBtnRadius * mBtnRadius * 1.7f;
+        float dx = x - mConfirmX, dy = y - mConfirmY;
+        if (dx * dx + dy * dy <= r2) return KEY_CONFIRM;
+        dx = x - mCancelX; dy = y - mCancelY;
+        if (dx * dx + dy * dy <= r2) return KEY_CANCEL;
+        return 0;
+    }
+
+    /**
+     * Consumes every touch. Joystick / action pointers become held SDL keys;
+     * every other pointer becomes a synthetic, real SDL mouse event.
+     *
+     * Returning true for the WHOLE MotionEvent is what keeps a joystick
+     * finger out of SDL. That also lets a joystick and a tap work at the
+     * same time, which the old overlay could never do.
+     */
+    public boolean handleTouch(MotionEvent evt)
+    {
+        final int action = evt.getActionMasked();
+        final int idx = evt.getActionIndex();
+
+        switch (action)
+        {
+            case MotionEvent.ACTION_DOWN:
+            case MotionEvent.ACTION_POINTER_DOWN:
+            {
+                int pid = evt.getPointerId(idx);
+                float x = evt.getX(idx), y = evt.getY(idx);
+                if (mJoyPointer < 0 && inJoystickZone(x, y))
+                {
+                    mJoyPointer = pid;
+                    mJoyCx = mJoyKx = x;
+                    mJoyCy = mJoyKy = y;
+                    mDirMask = 0;
+                }
+                else
+                {
+                    int key = hitActionButton(x, y);
+                    if (key != 0 && mBtnPointer < 0)
+                    {
+                        mBtnPointer = pid;
+                        mBtnKey = key;
+                        SDLActivity.onNativeKeyDown(key);
+                    }
+                    else if (mTapPointer < 0)
+                    {
+                        mTapPointer = pid;
+                        final int seq = ++mTapSeq;
+                        // SDL only refreshes mouseState.x/y on a MOVE event,
+                        // so position the cursor BEFORE signalling the tap.
+                        sendMouse(MotionEvent.ACTION_MOVE, x, y);
+                        // Tap signal rides the KEYBOARD path: on this device
+                        // SDL's onNativeMouse DOWN never reaches the engine
+                        // (motion does), while onNativeKeyDown is the path
+                        // the legacy on-screen pad used and is proven.
+                        // Ruby watches it via Input.raw_key_states as a
+                        // rising edge on SDL_SCANCODE_F10 (= 67).
+                        SDLActivity.onNativeKeyUp(TAP_KEY);
+                        SDLActivity.onNativeKeyDown(TAP_KEY);
+                        // Hold ~140 ms so RGSS (40 fps) samples the edge
+                        // even for a very quick tap; ACTION_UP does not
+                        // release early, only this timeout does.
+                        mHandler.postDelayed(new Runnable()
+                        {
+                            @Override public void run()
+                            {
+                                if (seq == mTapSeq)
+                                    SDLActivity.onNativeKeyUp(TAP_KEY);
+                            }
+                        }, 140);
+                    }
+                }
+                break;
+            }
+
+            case MotionEvent.ACTION_MOVE:
+                for (int i = 0; i < evt.getPointerCount(); i++)
+                {
+                    int pid = evt.getPointerId(i);
+                    if (pid == mJoyPointer)
+                        applyJoystick(evt.getX(i), evt.getY(i));
+                    else if (pid == mTapPointer)
+                        sendMouse(MotionEvent.ACTION_MOVE, evt.getX(i), evt.getY(i));
+                }
+                break;
+
+            case MotionEvent.ACTION_UP:
+            case MotionEvent.ACTION_POINTER_UP:
+            {
+                int pid = evt.getPointerId(idx);
+                if (pid == mJoyPointer) stopJoystick();
+                if (pid == mBtnPointer) stopButton();
+                if (pid == mTapPointer)
+                {
+                    // Do NOT release here. The delayed release scheduled on
+                    // DOWN keeps the button held ~140 ms so RGSS (40 fps)
+                    // samples at least one pressed frame. An immediate UP
+                    // after a 1 ms tap would close the same frame and
+                    // Input.trigger?(MOUSELEFT) would never see the edge.
+                    mTapPointer = -1;
+                }
+                break;
+            }
+
+            case MotionEvent.ACTION_CANCEL:
+                ++mTapSeq;
+                stopJoystick();
+                stopButton();
+                if (mTapPointer >= 0)
+                {
+                    SDLActivity.onNativeKeyUp(TAP_KEY);
+                    mTapPointer = -1;
+                }
+                break;
+
+            default:
+                break;
+        }
+
+        invalidate();
+        return true;
+    }
+
+    /**
+     * Inject a genuine (non touch-synthesized) SDL mouse event. Button 1 is
+     * SDL_BUTTON_LEFT, matching MsBinding(SDL_BUTTON_LEFT, Input::MouseLeft).
+     * eventthread.cpp drops SDL_TOUCH_MOUSEID events, so a real mouse event
+     * is required for this to work without rebuilding the native library.
+     */
+    /**
+     * KEYCODE_F10 (= 140). Double-checked against the Android keycode table:
+     * 142 would be KEYCODE_F12, and mkxp-z handles F12 as an RGSS reset
+     * (eventthread.cpp), which kills the game. Ruby listens on
+     * SDL_SCANCODE_F10 (= 67) via Input.raw_key_states.
+     */
+    private static final int TAP_KEY = 140;
+
+    private void sendMouse(int action, float x, float y)
+    {
+        android.util.Log.d("TJTouch", "sendMouse action=" + action
+            + " x=" + (int) x + " y=" + (int) y);
+        SDLActivity.onNativeMouse(1, action, x, y, false);
+    }
+
+    private void applyJoystick(float x, float y)
+    {
+        float dx = x - mJoyCx, dy = y - mJoyCy;
+        float dist = (float) Math.hypot(dx, dy);
+        if (dist > mJoyRadius)
+        {
+            float k = mJoyRadius / dist;
+            dx *= k; dy *= k;
+            dist = mJoyRadius;
+        }
+        mJoyKx = mJoyCx + dx;
+        mJoyKy = mJoyCy + dy;
+
+        int mask = 0;
+        if (dist >= mDeadZone)
+        {
+            // Screen coordinates: +x right, +y down. Sector 0 = right,
+            // then clockwise in 45 degree steps.
+            float angle = (float) Math.toDegrees(Math.atan2(dy, dx));
+            int sector = ((int) Math.floor((angle + 22.5f + 360f) / 45f)) % 8;
+            switch (sector)
+            {
+                case 0: mask = DIR_RIGHT;                 break;
+                case 1: mask = DIR_RIGHT | DIR_DOWN;     break;
+                case 2: mask = DIR_DOWN;                  break;
+                case 3: mask = DIR_DOWN  | DIR_LEFT;     break;
+                case 4: mask = DIR_LEFT;                  break;
+                case 5: mask = DIR_LEFT  | DIR_UP;       break;
+                case 6: mask = DIR_UP;                    break;
+                default: mask = DIR_UP   | DIR_RIGHT;    break;
+            }
+        }
+        setDirectionMask(mask);
+    }
+
+    /** Diff the held-direction set so diagonal changes never leave a stuck key. */
+    private void setDirectionMask(int mask)
+    {
+        if (mask == mDirMask) return;
+        syncKey(DIR_UP,    KeyEvent.KEYCODE_DPAD_UP,    mask);
+        syncKey(DIR_DOWN,  KeyEvent.KEYCODE_DPAD_DOWN,  mask);
+        syncKey(DIR_LEFT,  KeyEvent.KEYCODE_DPAD_LEFT,  mask);
+        syncKey(DIR_RIGHT, KeyEvent.KEYCODE_DPAD_RIGHT, mask);
+        mDirMask = mask;
+    }
+
+    private void syncKey(int bit, int keycode, int mask)
+    {
+        boolean was = (mDirMask & bit) != 0;
+        boolean now = (mask & bit) != 0;
+        if (now && !was) SDLActivity.onNativeKeyDown(keycode);
+        else if (!now && was) SDLActivity.onNativeKeyUp(keycode);
+    }
+
+    private void stopJoystick()
+    {
+        setDirectionMask(0);
+        mJoyPointer = -1;
+    }
+
+    private void stopButton()
+    {
+        if (mBtnKey != 0)
+        {
+            SDLActivity.onNativeKeyUp(mBtnKey);
+            mBtnKey = 0;
+        }
+        mBtnPointer = -1;
+    }
+
+    @Override
+    protected void onDraw(Canvas c)
+    {
+        super.onDraw(c);
+        drawButton(c, mConfirmX, mConfirmY, "选中", mBtnKey == KEY_CONFIRM);
+        drawButton(c, mCancelX, mCancelY, "返回", mBtnKey == KEY_CANCEL);
+
+        if (mJoyPointer >= 0)
+        {
+            mFill.setColor(Color.argb(45, 255, 255, 255));
+            mFill.setStyle(Paint.Style.FILL);
+            mStroke.setColor(Color.argb(110, 255, 255, 255));
+            c.drawCircle(mJoyCx, mJoyCy, mJoyRadius, mFill);
+            c.drawCircle(mJoyCx, mJoyCy, mJoyRadius, mStroke);
+            mFill.setColor(Color.argb(120, 255, 255, 255));
+            c.drawCircle(mJoyKx, mJoyKy, mJoyRadius * 0.44f, mFill);
+        }
+    }
+
+    private void drawButton(Canvas c, float x, float y, String label, boolean pressed)
+    {
+        mFill.setStyle(Paint.Style.FILL);
+        mFill.setColor(pressed ? Color.argb(115, 255, 255, 255)
+                               : Color.argb(40, 255, 255, 255));
+        mStroke.setColor(Color.argb(95, 255, 255, 255));
+        c.drawCircle(x, y, mBtnRadius, mFill);
+        c.drawCircle(x, y, mBtnRadius, mStroke);
+        Paint.FontMetrics fm = mText.getFontMetrics();
+        c.drawText(label, x, y - (fm.ascent + fm.descent) / 2f, mText);
+    }
+}
