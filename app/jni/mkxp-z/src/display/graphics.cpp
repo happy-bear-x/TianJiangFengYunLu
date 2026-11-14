@@ -845,7 +845,7 @@ struct GraphicsPrivate {
             rebuildIntegerScaleBuffer();
         }
         
-        recalculateScreenSize(rtData);
+        recalculateScreenSize(rtData->config.fixedAspectRatio);
         updateScreenResoRatio(rtData);
         
         TEXFBO::init(frozenScene);
@@ -966,7 +966,7 @@ struct GraphicsPrivate {
             
             /* some GL drivers change the viewport on window resize */
             glState.viewport.refresh();
-            recalculateScreenSize(threadData);
+            recalculateScreenSize(threadData->config.fixedAspectRatio);
             updateScreenResoRatio(threadData);
             
             SDL_Rect screen = {scOffset.x, scOffset.y, scSize.x, scSize.y};
@@ -1068,99 +1068,6 @@ struct GraphicsPrivate {
         }
         
         FBO::clear();
-
-#ifdef MKXPZ_BUILD_ANDROID
-        /* Letterbox fill.
-         *
-         * The canvas does not always cover the whole window: on a 16:9
-         * surface a 4:3 canvas is letterboxed, leaving two black bars.
-         * Fill them with a dimmed, linearly filtered copy of the frame so
-         * the screen area is used instead of being wasted.
-         *
-         * Linear filtering a low-res pixel image up to full screen doubles
-         * as a cheap blur, so the bars read as a soft backdrop rather than
-         * a hard stretched stripe. The foreground is drawn opaquely on top
-         * of the centre, so only the bars remain visible. */
-        if (scSize.x < winSize.x || scSize.y < winSize.y)
-        {
-            GLMeta::blitRectangle(IntRect(0, 0, sourceSize.x, sourceSize.y),
-                                  IntRect(0, winSize.y, winSize.x, -winSize.y),
-                                  true);
-
-            /* Both the viewport and the scissor box are still sized for the
-             * canvas (640x480 here). blitBeginScreen() only binds the draw
-             * framebuffer when native blitting is available, so nothing ever
-             * widened them. Without this, every quad beyond the canvas rect
-             * -- i.e. the whole right bar -- is clipped away. */
-            glState.viewport.pushSet(IntRect(0, 0, winSize.x, winSize.y));
-            glState.scissorTest.pushSet(false);
-
-            FlatColorShader &dimShader = shState->shaders().flatColor;
-            dimShader.bind();
-            dimShader.applyViewportProj();
-
-            glState.blend.pushSet(true);
-            gl.BlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
-                                 GL_ZERO, GL_ONE);
-
-            Quad &dimQuad = shState->gpQuad();
-
-            /* Dim the bars with a gradient that is transparent right at the
-             * seam and deepens towards the screen edge. A hard step at the
-             * seam reads as a visible vertical line; fading it out blends the
-             * stretched backdrop into the real frame. */
-            const int BANDS = 20;
-            const float MAX_DIM = 0.85f;
-
-            const int barL = scOffset.x;
-            const int barR = winSize.x - (scOffset.x + scSize.x);
-
-            {
-                static bool lbLogged = false;
-                if (!lbLogged)
-                {
-                    lbLogged = true;
-                    Debug() << "letterbox: win" << winSize.x << winSize.y
-                            << "scSize" << scSize.x << scSize.y
-                            << "scOffset" << scOffset.x << scOffset.y
-                            << "src" << sourceSize.x << sourceSize.y
-                            << "barL" << barL << "barR" << barR;
-                }
-            }
-
-            for (int side = 0; side < 2; ++side)
-            {
-                int barW = (side == 0) ? barL : barR;
-                if (barW <= 0)
-                    continue;
-
-                float bandW = (float)barW / BANDS;
-                int baseX = (side == 0) ? 0 : (scOffset.x + scSize.x);
-
-                for (int i = 0; i < BANDS; ++i)
-                {
-                    /* i = 0 sits on the seam for the right bar and on the
-                     * outer edge for the left bar, so mirror the weight. */
-                    float t = ((float)i + 0.5f) / BANDS;
-                    float weight = (side == 0) ? (1.0f - t) : t;
-
-                    int x0 = baseX + (int)(i * bandW);
-                    int x1 = baseX + (int)((i + 1) * bandW);
-                    if (x1 <= x0)
-                        continue;
-
-                    dimShader.setColor(Vec4(0.0f, 0.0f, 0.0f, MAX_DIM * weight));
-                    dimQuad.setTexPosRect(IntRect(0, 0, 1, 1),
-                                          IntRect(x0, winSize.y, x1 - x0, -winSize.y));
-                    dimQuad.draw();
-                }
-            }
-
-            glState.blend.pop();
-            glState.scissorTest.pop();
-            glState.viewport.pop();
-        }
-#endif
 
         metaBlitBufferFlippedScaled(sourceSize);
         
@@ -1645,7 +1552,7 @@ bool Graphics::getFixedAspectRatio() const
 void Graphics::setFixedAspectRatio(bool value)
 {
     shState->config().fixedAspectRatio = value;
-    p->recalculateScreenSize(p->threadData);
+    p->recalculateScreenSize(p->threadData->config.fixedAspectRatio);
     p->findHighestIntegerScale();
     p->recalculateScreenSize(p->threadData->config.fixedAspectRatio);
     p->updateScreenResoRatio(p->threadData);
