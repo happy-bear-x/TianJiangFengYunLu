@@ -2,47 +2,69 @@
 
 > 基于 [mkxp-z](https://github.com/mkxp-z/mkxp-z) 的 RPG Maker XP Android 运行壳。
 
-**仓库：** <https://github.com/wushilian/TianJiangFengYunLu>
+**仓库：** <https://github.com/happy-bear-x/TianJiangFengYunLu>
 
 ---
 
 ## 简介
 
-这是《天降风云录16-10》的 Android 移植工程，包含：
+《天降风云录16-10》是 2006 年前后用 RPG Maker XP 制作的武侠 RPG：平安镇出身的陆孤梵，
+一路行侠仗义、结识同伴，走完一段带着市井烟火气的江湖故事。
 
-- Android 启动、解包、存档备份与 `core.zip` 热更新；
-- mkxp-z 在 Android 上的全屏、字体、地图和触屏适配；
-- 游戏运行所需的兼容脚本与工具；
-- 可直接安装的 APK 发布包（见 Releases）。
+这个仓库把它搬到了 Android 上：原版只能坐在 Windows 前玩，现在手机装个 APK 就能重温，
+并且**按现代手游的习惯重做了操作与画面**——不是简单套个模拟器，而是从引擎渲染层和输入层动手。
 
-当前构建：**1.6.0（versionCode 50）**。
+当前构建：**1.6.0（versionCode 50）**，支持 Android 6.0（API 23）及以上，ARM64 / ARMv7。
 
-> 仓库包含可修改的游戏数据 `tianjiang_game/`（Data、Graphics、Audio、Fonts）和 ARM 原生库。  
-> `game.zip` 和 APK 构建产物不纳入版本库；APK 由 GitHub Actions 构建并发布到 Releases。
+### 这一版做了什么
+
+**画面**
+
+- 画布由 4:3（640×480）扩展为 **16:9（853×480）**，1280×720 / 1920×1080 屏幕等比放大
+  1.5× / 2.25×，**不留黑边、不横向拉伸变形、不重复图块**；
+- 地图横向可视范围从 20 格提升到 **26.7 格**，瓦片渲染同步扩展；
+- 镜头在地图边界前停止移动，初始位置也会钳制，不会露出地图外的空白；
+- 标题菜单居中，开场 / 结局动画原有的 161px 黑边修正；
+- 属性、物品、技能、商店、穿戴等「整屏背景 + 固定槽位」的界面，文字重新对齐回原设计的色块。
+
+**操作**
+
+- 左下角**浮动摇杆**：落指即生成，摇杆帽跟手，支持 8 方向，包含**真正的斜向行走**；
+  贴墙斜走时自动沿墙滑行（上有房子拖歪成右上 → 向右走），不会因为一点偏移就原地卡死；
+- **界面上可以直接点**：点菜单项即选中并确认，对话框点击推进；
+- **点窗口外面 = 返回**，符合现在的手游习惯；
+- 地图**左上角隐藏热区**可呼出菜单（等价于屏幕上的「返回」），不占画面；
+- 右下角保留「选中 / 返回」两个按钮，物理手柄与键盘通路也一并保留。
 
 ---
 
 ## 截图
 
-| 标题画面 | 游戏画面 |
+| 标题画面 | 平安镇 |
 | --- | --- |
 | ![](docs/screenshots/01-title.png) | ![](docs/screenshots/02-world.png) |
 
-| 南疆 | 南疆提示 |
+| 主菜单 | 属性（状态） |
 | --- | --- |
-| ![](docs/screenshots/03-nanj-town.png) | ![](docs/screenshots/04-nanj-hint.png) |
+| ![](docs/screenshots/03-menu.png) | ![](docs/screenshots/04-status.png) |
 
-| 技能菜单 | 战斗技能 |
+> 截图为 1280×720 实机画面，左下角淡圈是摇杆的待机提示，左上是隐藏菜单热区（不可见）。
+
+---
+
+## 触屏操作一览
+
+| 操作 | 效果 |
 | --- | --- |
-| ![](docs/screenshots/05-skill-menu.png) | ![](docs/screenshots/06-battle-skill.png) |
+| 左下半区按下并拖动 | 唤出浮动摇杆，8 方向移动，斜向为真正的斜走 |
+| 点击菜单项 / 列表项 | 选中该项并确认，等价于「选中」按钮 |
+| 点击对话框 | 推进对话 |
+| 点击窗口外面 | 返回上一层（地图、战斗、标题画面除外） |
+| 点击地图左上角 | 呼出主菜单 |
+| 右下「选中」/「返回」 | 确认 / 取消，同时兼容物理手柄与键盘 |
 
-| 物品列表 | 南疆防具店 |
-| --- | --- |
-| ![](docs/screenshots/07-item-list.png) | ![](docs/screenshots/08-nanj-armor-shop.png) |
-
-| 真结局 |
-| --- |
-| ![](docs/screenshots/09-ending.png) |
+已知限制：地图上「点哪走哪」需要寻路，本版未实现；转盘抽奖等自定义排版界面
+尚未逐个适配点击命中，仍可用摇杆操作。
 
 ---
 
@@ -51,7 +73,7 @@
 ```text
 TianJiangFengYunLu/
 ├── app/                    Android 应用模块
-│   ├── src/main/java/      Android 壳与 mkxp-z 接入
+│   ├── src/main/java/      Android 壳、mkxp-z 接入与触屏输入层
 │   ├── src/main/res/       资源与布局
 │   ├── src/main/assets/    core.zip（热更新包）
 │   └── build.gradle
@@ -170,7 +192,7 @@ python3 tools/build_game_zip.py
 
 - 构建 `assembleDebug`；
 - 自动创建/更新对应 Release；
-- 上传 `app-debug.apk` 作为 Release 附件。
+- 上传 APK 作为 Release 附件。
 
 工作流文件：`.github/workflows/release.yml`。
 
@@ -189,4 +211,4 @@ APK 见仓库的 **Releases** 页面：
 
 ---
 
-**仓库：** <https://github.com/wushilian/TianJiangFengYunLu>
+**仓库：** <https://github.com/happy-bear-x/TianJiangFengYunLu>
