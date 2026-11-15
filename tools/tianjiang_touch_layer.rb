@@ -75,7 +75,11 @@ module TJTouch
       lx = x - w.x - 16
       ly = y - w.y - 16
       return nil if lx < 0 || ly < 0
-      col_w = w.width / col_max
+      # TJ_UIAlign 会把窗口真实宽度横向放大（width 返回的是设计宽度），
+      # 命中测试必须用真实宽度才能对上缩放后的列位置。
+      real_w = w.respond_to?(:tj_real_w) ? w.tj_real_w.to_i : w.width
+      real_w = w.width if real_w < 1
+      col_w = real_w / col_max
       return nil if col_w < 1
       oy = begin
         w.oy.to_i
@@ -97,7 +101,9 @@ module TJTouch
           next unless w.active
           next unless w.visible
           next unless w.respond_to?(:index=)
-          next if x < w.x || x >= w.x + w.width
+          rw = w.respond_to?(:tj_real_w) ? w.tj_real_w.to_i : w.width
+          rw = w.width if rw < 1
+          next if x < w.x || x >= w.x + rw
           next if y < w.y || y >= w.y + w.height
           idx = index_at(w, x, y)
           next if idx.nil?
