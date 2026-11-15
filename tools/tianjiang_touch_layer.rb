@@ -142,6 +142,24 @@ module TJTouch
       false
     end
 
+    # 画布坐标（853x480）下左上角隐藏菜单的点击区。
+    # 只在 Scene_Map 生效：菜单类场景里这块会被窗口命中优先吃掉，
+    # 战斗/标题等场景不会触发。
+    MENU_CORNER_W = 84
+    MENU_CORNER_H = 84
+
+    # 「点窗口外面 = 返回」不适用的场景：地图上点空白发 B 会把菜单呼出来，
+    # 战斗里 B 语义不同，标题画面发 B 可能触发退出。
+    def outside_back_allowed?
+      return false if $scene.nil?
+      return false if $scene.is_a?(Scene_Map)
+      return false if $scene.is_a?(Scene_Battle)
+      return false if $scene.is_a?(Scene_Title)
+      true
+    rescue Exception
+      false
+    end
+
     def process_click
       return unless Input.respond_to?(:raw_key_states)
       tr = tap_signal?
@@ -163,6 +181,12 @@ module TJTouch
       elsif $game_temp != nil && $game_temp.message_window_showing
         # 对话框没有可选窗口，点击等价于推进
         press(Input::C)
+      elsif $scene.is_a?(Scene_Map) && x < MENU_CORNER_W && y < MENU_CORNER_H
+        # 左上角隐藏菜单：等价于点「返回」（Scene_Map 用 Input::B 打开菜单）
+        press(Input::B)
+      elsif outside_back_allowed?
+        # 主流触屏习惯：点开菜单后点窗口外面 = 返回
+        press(Input::B)
       end
     end
 

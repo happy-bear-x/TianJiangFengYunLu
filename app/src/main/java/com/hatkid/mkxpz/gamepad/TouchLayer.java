@@ -40,10 +40,22 @@ public class TouchLayer extends View
     private static final int KEY_CONFIRM = KeyEvent.KEYCODE_C;
     private static final int KEY_CANCEL  = KeyEvent.KEYCODE_X;
 
+    /**
+     * Joystick trigger zone. Kept to the bottom-left corner on purpose: it
+     * used to span the whole lower-left 60% of the screen, so tapping menu
+     * items that sit below the top-left menu (or any content along the left
+     * edge) summoned the joystick instead of a click.
+     */
+    private static final float JOY_ZONE_MAX_X   = 0.30f;   // left 30%
+    private static final float JOY_ZONE_MIN_Y   = 0.68f;   // bottom 32%
+    private static final float JOY_HOME_X       = 0.15f;   // idle hint centre
+    private static final float JOY_HOME_Y       = 0.86f;
+
     private int mWidth, mHeight;
     private float mJoyRadius, mDeadZone;
     private float mBtnRadius;
     private float mConfirmX, mConfirmY, mCancelX, mCancelY;
+    private float mHomeX, mHomeY;
 
     private int mJoyPointer = -1;
     private int mBtnPointer = -1;
@@ -88,11 +100,13 @@ public class TouchLayer extends View
         mConfirmY = h * 0.70f;
         mCancelX = w * 0.78f;
         mCancelY = h * 0.87f;
+        mHomeX = w * JOY_HOME_X;
+        mHomeY = h * JOY_HOME_Y;
     }
 
     private boolean inJoystickZone(float x, float y)
     {
-        return x < mWidth * 0.34f && y > mHeight * 0.40f;
+        return x < mWidth * JOY_ZONE_MAX_X && y > mHeight * JOY_ZONE_MIN_Y;
     }
 
     private int hitActionButton(float x, float y)
@@ -327,6 +341,19 @@ public class TouchLayer extends View
             c.drawCircle(mJoyCx, mJoyCy, mJoyRadius, mStroke);
             mFill.setColor(Color.argb(120, 255, 255, 255));
             c.drawCircle(mJoyKx, mJoyKy, mJoyRadius * 0.44f, mFill);
+        }
+        else
+        {
+            // Idle hint: just enough to show where the joystick lives,
+            // faint enough to disappear over map art (alpha 20-40).
+            float r = mJoyRadius * 0.85f;
+            mFill.setStyle(Paint.Style.FILL);
+            mFill.setColor(Color.argb(20, 255, 255, 255));
+            c.drawCircle(mHomeX, mHomeY, r, mFill);
+            mStroke.setColor(Color.argb(36, 255, 255, 255));
+            c.drawCircle(mHomeX, mHomeY, r, mStroke);
+            mFill.setColor(Color.argb(30, 255, 255, 255));
+            c.drawCircle(mHomeX, mHomeY, mJoyRadius * 0.30f, mFill);
         }
     }
 
