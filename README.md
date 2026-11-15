@@ -15,7 +15,7 @@
 - 游戏运行所需的兼容脚本与工具；
 - 可直接安装的 APK 发布包（见 Releases）。
 
-当前构建：**1.5.29（versionCode 49）**。
+当前构建：**1.6.0（versionCode 50）**。
 
 > 仓库包含可修改的游戏数据 `tianjiang_game/`（Data、Graphics、Audio、Fonts）和 ARM 原生库。  
 > `game.zip` 和 APK 构建产物不纳入版本库；APK 由 GitHub Actions 构建并发布到 Releases。
@@ -178,7 +178,7 @@ python3 tools/build_game_zip.py
 
 APK 见仓库的 **Releases** 页面：
 
-<https://github.com/wushilian/TianJiangFengYunLu/releases/latest>
+<https://github.com/happy-bear-x/TianJiangFengYunLu/releases/latest>
 
 ---
 
