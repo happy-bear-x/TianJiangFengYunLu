@@ -86,8 +86,15 @@ module TJTouch
       rescue Exception
         0
       end
+      # 行高默认 32（RGSS 标准），但商店那批窗口用 24，必须各算各的，
+      # 否则点列表中间会算到别的行去。
+      row_h = 32
+      if w.respond_to?(:tj_row_h)
+        rh = w.tj_row_h.to_i
+        row_h = rh if rh > 0
+      end
       col = lx / col_w
-      row = (ly + oy) / 32
+      row = (ly + oy) / row_h
       return nil if col >= col_max
       idx = row * col_max + col
       return nil if idx < 0 || idx >= item_max
@@ -119,6 +126,70 @@ module TJTouch
         end
       end
       hit
+    end
+
+    #--------------------------------------------------------------------------
+    # 存档 / 读档界面：不是「一个可选窗口列表」，而是 4 个独立的
+    # Window_SaveFile（每个高 104），选择状态由 Scene_File 的 @file_index
+    # 维护。通用 hit_test 靠 index= 找目标，这批窗口没有 index=，所以
+    # 以前点存档栏完全没反应。这里单独接管。
+    #--------------------------------------------------------------------------
+    def savefile_windows
+      return nil unless defined?(Scene_File) && $scene.is_a?(Scene_File)
+      wins = $scene.instance_variable_get(:@savefile_windows)
+      return nil unless wins.is_a?(Array) && wins.size >= 4
+      wins
+    rescue Exception
+      nil
+    end
+
+    def save_slot_at(x, y)
+      wins = savefile_windows
+      return nil unless wins
+      wins.each_with_index do |w, i|
+        next if w.nil?
+        begin
+          rect_x = w.x || 0
+          rect_w = w.width || 0
+          rect_y = w.y || 0
+          rect_h = w.height || 0
+          next if x < rect_x || x >= rect_x + rect_w
+          next if y < rect_y || y >= rect_y + rect_h
+        rescue Exception
+          next
+        end
+        return i
+      end
+      nil
+    end
+
+    # 点哪个格子就把 @file_index 移过去并直接确认 —— 触屏上没人愿意
+    # 先点选中、再跑去按「选中按钮」。
+    def click_save_slot(i)
+      wins = savefile_windows
+      cur = $scene.instance_variable_get(:@file_index).to_i
+      begin
+        wins[cur].selected = false if wins[cur] && cur != i
+      rescue Exception
+      end
+      $scene.instance_variable_set(:@file_index, i)
+      begin
+        wins[i].selected = true
+        $game_system.se_play($data_system.cursor_se)
+      rescue Exception
+      end
+      # 读档时点空格子只移光标，不确认 —— 否则会一直听到 buzzer
+      if $scene.is_a?(Scene_Load) ||
+         (defined?(Scene_Load2) && $scene.is_a?(Scene_Load2))
+        exist = begin
+          wins[i].instance_variable_get(:@file_exist)
+        rescue Exception
+          false
+        end
+        press(Input::C) if exist
+      else
+        press(Input::C)
+      end
     end
 
     # 点击信号：Java 在 tap 时发 KEYCODE_F10，走 SDL 键盘通路。
@@ -171,6 +242,13 @@ module TJTouch
       y = Input.mouse_y
       return if x < 0 || y < 0
       return if x >= Graphics.width || y >= Graphics.height
+
+      # 存档/读档优先：这四个格子不是可选窗口，走不了通用命中
+      slot = save_slot_at(x, y)
+      if !slot.nil?
+        click_save_slot(slot)
+        return
+      end
 
       hit = hit_test(x, y)
       if hit
@@ -226,6 +304,17 @@ class Window_Base
   def initialize(*args)
     tj_touch_initialize(*args)
     TJTouch.register(self)
+  end
+end
+
+# 商店那一批窗口用自己的排版：行高 24（top_row 里 oy/24），
+# 列宽 = width/column_max。通用命中按 32 行高算会点到别的行。
+[defined?(Window_Selectableshop) ? Window_Selectableshop : nil,
+ defined?(Window_Selectablesell) ? Window_Selectablesell : nil].compact.each do |klass|
+  klass.class_eval do
+    def tj_row_h
+      24
+    end
   end
 end
 

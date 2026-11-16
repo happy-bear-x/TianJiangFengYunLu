@@ -60,11 +60,31 @@ if defined?(Window_Base)
       @tj_authored_w = width
       if @tj_align && TJUIAlign::F != 1.0
         @tj_real_w = (width * TJUIAlign::F).round
-        tj_align_initialize((x * TJUIAlign::F).round, y,
-                            @tj_real_w, height)
+        # 原来的 Window_Base#initialize 内部还会执行 self.x = x，
+        # 而 Window#x= 也挂了缩放钩子 —— 不设这个标志的话 x 会被
+        # 缩放两次（F² = 1.78）。属性页的窗口 x 多为 0 所以没暴露，
+        # 商店（x=192）会整块飞出屏幕右侧。
+        nx = (x * TJUIAlign::F).round
+        # 原版就贴右边缘的窗口（如商店列表 192+448=640），缩放到
+        # 853 画布后右边界会超出，这里把它推回可见区域。
+        if nx + @tj_real_w > Graphics.width
+          nx = [Graphics.width - @tj_real_w, 0].max
+        end
+        @tj_initing = true
+        begin
+          tj_align_initialize(nx, y, @tj_real_w, height)
+        ensure
+          @tj_initing = false
+        end
       else
         @tj_real_w = width
-        tj_align_initialize(x, y, width, height)
+        # 存档/读档界面没有整屏背景，640 宽的窗口贴左会留 213px 黑边，
+        # 顺手把它水平居中（窗口内容相对窗口绘制，整体平移即视觉居中）。
+        nx = x
+        if width == 640 && defined?(Scene_File) && $scene.is_a?(Scene_File)
+          nx = x + (Graphics.width - 640) / 2
+        end
+        tj_align_initialize(nx, y, width, height)
       end
     end
 
@@ -82,6 +102,8 @@ if defined?(Window)
     def x=(v)
       if @tj_align && !@tj_initing && v.is_a?(Numeric)
         v = (v * TJUIAlign::F).round
+        w = @tj_real_w || self.width
+        v = [Graphics.width - w, 0].max if v + w > Graphics.width
       end
       tj_align_x_eq(v)
     end
