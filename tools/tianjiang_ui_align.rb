@@ -96,7 +96,60 @@ if defined?(Window_Base)
 end
 
 if defined?(Window)
+  # RGSS 移动光标用的是 self.cursor_rect.set(x, y, w, h)：拿到 Rect 之后就
+  # 地修改，不会走 cursor_rect= 的钩子。所以文字被放大 1.333 倍、光标却
+  # 还是原尺寸原间距，商店「是/否」两个选项就对不上了。
+  #
+  # 这里让 getter 返回一个代理：写入时乘 F，读出时除回 F，调用方看到的
+  # 仍然是设计坐标系。
+  class TJCursorProxy
+    def initialize(rect, f)
+      @rect = rect
+      @f = f
+    end
+
+    def set(x, y, w, h)
+      @rect.set((x * @f).round, y, (w * @f).round, h)
+    end
+
+    def empty
+      @rect.empty
+    end
+
+    def x
+      (@rect.x / @f).round
+    end
+
+    def width
+      (@rect.width / @f).round
+    end
+
+    def y
+      @rect.y
+    end
+
+    def height
+      @rect.height
+    end
+
+    def method_missing(name, *args, &blk)
+      @rect.send(name, *args, &blk)
+    end
+
+    def respond_to_missing?(name, include_private = false)
+      @rect.respond_to?(name, include_private)
+    end
+  end
+
   class Window
+    alias_method :tj_align_cursor_get, :cursor_rect
+    def cursor_rect
+      r = tj_align_cursor_get
+      return r if r.nil?
+      return r unless @tj_align && TJUIAlign::F != 1.0
+      TJCursorProxy.new(r, TJUIAlign::F)
+    end
+
     # 场景代码在窗口创建后重定位（@win.x = ...）同样要映射
     alias_method :tj_align_x_eq, :x=
     def x=(v)

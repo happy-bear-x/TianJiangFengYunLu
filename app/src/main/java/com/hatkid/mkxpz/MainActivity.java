@@ -94,6 +94,36 @@ public class MainActivity extends SDLActivity
         }
     };
 
+    /**
+     * RGSS has no way to ask for the physical screen size, but the canvas
+     * width has to be decided before the first script runs: mkxp_compat.rb
+     * calls Graphics.resize_screen() from a preload script.
+     *
+     * So drop "WxH" into the game directory here, before the native library
+     * loads and mkxp starts evaluating scripts. The Ruby side reads it and
+     * picks a canvas width matching the device aspect ratio, clamped so an
+     * ultra-wide panel does not stretch the world absurdly far.
+     */
+    private void writeScreenMetrics(File gameDir)
+    {
+        try
+        {
+            android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+            int longSide = Math.max(dm.widthPixels, dm.heightPixels);
+            int shortSide = Math.min(dm.widthPixels, dm.heightPixels);
+            if (longSide <= 0 || shortSide <= 0)
+                return;
+            File f = new File(gameDir, "tj_screen");
+            java.io.FileWriter w = new java.io.FileWriter(f);
+            w.write(longSide + "x" + shortSide);
+            w.close();
+        }
+        catch (Exception e)
+        {
+            // 拿不到就退回默认 16:9，不影响启动
+        }
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState)
     {
@@ -104,6 +134,8 @@ public class MainActivity extends SDLActivity
             finish();
             return;
         }
+
+        writeScreenMetrics(gameDir);
 
         super.onCreate(savedInstanceState);
         applyImmersiveMode();

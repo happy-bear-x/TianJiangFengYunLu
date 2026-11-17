@@ -23,27 +23,43 @@ class Win32API
   alias Call call
 end
 
-# --- 16:9 canvas ---------------------------------------------------------
+# --- canvas width follows the device aspect ratio -------------------------
 # The game is authored for a 640x480 (4:3) canvas: 20x15 tiles, with all
-# windows positioned against that frame. Stretching that frame onto a 16:9
-# surface distorts every tile by 33% horizontally.
+# windows positioned against that frame. Stretching that frame onto a wide
+# surface distorts every tile horizontally.
 #
-# Widen the canvas to 853x480 instead (1.7771, i.e. 16:9 to within 0.04%).
-# Filling the screen then becomes an even ~1.5x scale in both axes, so
-# nothing is stretched and the vertical view keeps all 15 tile rows.
+# Instead the canvas is widened to match the panel: 853x480 on 16:9,
+# 960x480 on 18:9, up to 1066x480 (20:9). The vertical view keeps all 15
+# tile rows and the art is never stretched -- the world simply shows more
+# columns, the way ultrawide ports normally work (Hor+).
 #
-# The extra 213 columns have to be filled by the game itself:
-#   * Viewports are widened so the tilemap draws into them. The engine's
-#     tilemap repeats the border tile past the map edge (see tilemap.cpp),
-#     so small maps no longer show a black band.
-#   * Windows are shifted right by half the extra width to stay centred.
-#   * Full-screen artwork (title, battle back) is a 640x480 bitmap on a
-#     sprite; scale it horizontally so it covers the wider canvas.
+# 1066 is a deliberate ceiling: past 20:9 the extra columns cost more than
+# they show, because 113 of the 183 maps are narrower than the 27 tiles a
+# 16:9 canvas already reveals, so wider canvases mostly expose empty map
+# data rather than scenery.
+#
+# The physical screen size is not available from RGSS, so MainActivity
+# writes "WxH" into the game directory before the native library starts.
 $tj_orig_w   = 640
 $tj_orig_h   = 480
-$tj_canvas_w = 853
 $tj_canvas_h = 480
-$tj_ui_shift = ($tj_canvas_w - $tj_orig_w) / 2   # 106
+
+$tj_aspect = begin
+  raw = File.read("tj_screen").strip
+  m = raw.match(/(\d+)\s*x\s*(\d+)/)
+  if m && m[1].to_i > 0 && m[2].to_i > 0
+    m[1].to_i.to_f / m[2].to_i
+  else
+    16.0 / 9.0
+  end
+rescue Exception
+  16.0 / 9.0
+end
+
+$tj_canvas_w = ($tj_canvas_h * $tj_aspect).round
+$tj_canvas_w = 640 if $tj_canvas_w < 640
+$tj_canvas_w = 1066 if $tj_canvas_w > 1066
+$tj_ui_shift = ($tj_canvas_w - $tj_orig_w) / 2
 
 begin
   if defined?(Graphics) && Graphics.respond_to?(:resize_screen)

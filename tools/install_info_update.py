@@ -31,7 +31,12 @@ QQ_OLD = "个人QQ：980454969"
 QQ_NEW = "Q群：1134180232（点此页任意位置可复制）"
 OLD_GROUP = "游戏群：62647686"
 VER_OLD = "版本号：V15.11"
-VER_NEW = "版本号：V15.11　安卓适配：1.6.0"
+VER_NEW = "版本号：V15.11　小熊优化版 1.6.0"
+
+# 原版作者行后面补一行优化者，原行本身保留
+MAKER_OLD = "制作人：QiRonPe"
+MAKER_NEW = "制作人：QiRonPe（原版）\r\n小熊优化：happy-bear-x"
+EDITOR_OLD = "小熊优化："
 
 # ── 游戏帮助 ──────────────────────────────────────────────────────────
 HELP_OLD = '简介 ="1.主角初始房屋的衣柜可更换衣物；'
@@ -63,8 +68,11 @@ def rewrite(text):
     if OLD_GROUP in text:
         text = text.replace("\n\n" + OLD_GROUP, "")
         text = text.replace(OLD_GROUP, "")
-    if VER_OLD in text and "安卓适配" not in text:
-        text = text.replace(VER_OLD, VER_NEW)
+    # 版本行整段重写（幂等）：不管原来是「安卓适配」还是别的后缀，
+    # 统一成「小熊优化版」，避免多次运行叠加后缀
+    text = re.sub(r"版本号：V15\.11(　[^\r\n]*)?", VER_NEW, text)
+    if MAKER_OLD in text and EDITOR_OLD not in text:
+        text = text.replace(MAKER_OLD, MAKER_NEW)
     if HELP_OLD in text:
         text = text.replace(HELP_OLD, HELP_NEW)
 
@@ -106,6 +114,7 @@ def main():
     assert "980454969" not in body, "old personal QQ survived"
     assert "62647686" not in body, "stale group number survived"
     assert "触屏操作" in body, "touch help section missing"
+    assert "小熊优化" in body, "port author credit missing"
     print(f"  verify OK: QQ group set, help updated, "
           f"{SCRIPTS.stat().st_size} bytes")
 
