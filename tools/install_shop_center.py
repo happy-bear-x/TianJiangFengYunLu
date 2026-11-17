@@ -1,22 +1,27 @@
 #!/usr/bin/env python3
-"""Centre the shop's buy-confirm backdrop on the 853-wide canvas.
+"""Fit the shop's buy-confirm backdrop to the wide canvas.
 
-The buy dialog is not a Window at all: Scene_Shop shows a 364x230 sprite
-`@backbuy` (Graphics/Pictures/输入.png) as the backdrop, with the number
-and yes/no windows drawn on top of it. The sprite is positioned with
+The buy dialog is not a Window: Scene_Shop shows a 364x230 sprite
+`@backbuy` (Graphics/Pictures/输入.png) as the backdrop art, with the
+number and yes/no windows painted on top of it.
 
-    @backbuy.x = 320 - 364 / 2      # = 138, centre 320
+Two problems, in order of discovery:
 
-which is hard-coded to the original 640-wide canvas. Nothing rescales it,
-because the picture is smaller than a full screen and mkxp_compat only
-stretches 640x480 art. Meanwhile the number / command windows DO get the
-1.333 horizontal remap, so their text ends up centred on 426 while the
-backdrop stays at 138..502 -- the dialog looks shifted left by ~106px.
+1. Position. It was hard-coded at `320 - 364/2` = 138, i.e. centred on
+   the old 640 canvas. Nothing moved it, so the backdrop stayed left
+   while the text (which does get the 1.333 remap) centred on 426.
 
-Rewrite that one expression to centre on Graphics.width instead. The y
-coordinate needs no change (the vertical canvas is still 480).
+2. Width. mkxp_compat only stretches full-screen 640x480 art, and this
+   picture is smaller than a screen, so it kept its original 364px width
+   while the windows above it were rescaled to 490px. The text spread
+   wider than the frame around it.
 
-Idempotent: the replacement marker is checked before writing.
+So the sprite must be *scaled* horizontally exactly like the background
+art (zoom_x = Graphics.width / 640) and then centred on its scaled
+width. Vertical stays 1:1 because the canvas height is still 480.
+
+Idempotent: recognises both the original expression and the
+x-only-centring version written by the previous revision.
 """
 import zlib
 from pathlib import Path
@@ -27,15 +32,24 @@ from rubymarshal.writer import writes
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS = ROOT / "tianjiang_game" / "Data" / "Scripts.rxdata"
 
-OLD = b"@backbuy.x = 320-364 / 2"
-NEW = b"@backbuy.x = (Graphics.width - 364) / 2"
+MARK = b"@backbuy.zoom_x = Graphics.width / 640.0"
 
-# 360 is a second copy of the same layout in some shop variants
-OLD_VARIANTS = [
-    (b"@backbuy.x = 320-364 / 2", b"@backbuy.x = (Graphics.width - 364) / 2"),
-    (b"@backbuy.x=320-364 / 2", b"@backbuy.x=(Graphics.width - 364) / 2"),
-    (b"@backbuy.x = 320 - 364 / 2", b"@backbuy.x = (Graphics.width - 364) / 2"),
-    (b"@backbuy.x=320 - 364 / 2", b"@backbuy.x=(Graphics.width - 364) / 2"),
+_CENTER = (b"@backbuy.zoom_x = Graphics.width / 640.0\n"
+           b"    @backbuy.x = (Graphics.width - 364 * @backbuy.zoom_x) / 2")
+
+# (old, replacement) — several spellings appear across the shop variants
+REWRITES = [
+    # v1 of this patch: centred but not scaled
+    (b"@backbuy.x = (Graphics.width - 364) / 2", _CENTER),
+    # original 640-canvas centring
+    (b"@backbuy.x = 320-364 / 2", _CENTER),
+    (b"@backbuy.x=320-364 / 2",
+     b"@backbuy.zoom_x = Graphics.width / 640.0\n"
+     b"    @backbuy.x=(Graphics.width - 364 * @backbuy.zoom_x) / 2"),
+    (b"@backbuy.x = 320 - 364 / 2", _CENTER),
+    (b"@backbuy.x=320 - 364 / 2",
+     b"@backbuy.zoom_x = Graphics.width / 640.0\n"
+     b"    @backbuy.x=(Graphics.width - 364 * @backbuy.zoom_x) / 2"),
 ]
 
 
@@ -54,7 +68,7 @@ def patch(data):
             continue
         body = zlib.decompress(entry[2])
         new = body
-        for old, rep in OLD_VARIANTS:
+        for old, rep in REWRITES:
             if old in new:
                 new = new.replace(old, rep)
         if new != body:
@@ -68,20 +82,21 @@ def main():
     data = loads(SCRIPTS.read_bytes())
     n = patch(data)
     if n == 0:
-        print("  nothing to patch (already centred?)")
+        print("  nothing to patch (already scaled?)")
         return
     SCRIPTS.write_bytes(writes(data))
 
-    # 验证：重新读一遍，确认表达式已写入且旧写法消失
     check = loads(SCRIPTS.read_bytes())
     hits = 0
     for entry in check:
         body = zlib.decompress(entry[2])
-        if b"(Graphics.width - 364) / 2" in body:
+        if MARK in body:
             hits += 1
         assert b"@backbuy.x = 320-364 / 2" not in body, "old expression survived"
-    assert hits >= 1, "centred expression not found after write"
-    print(f"  verify OK: {hits} shop script(s) centred, {SCRIPTS.stat().st_size} bytes")
+        assert b"@backbuy.x = (Graphics.width - 364) / 2" not in body, \
+            "x-only centring survived"
+    assert hits >= 1, "scaled expression not found after write"
+    print(f"  verify OK: {hits} shop script(s) scaled, {SCRIPTS.stat().st_size} bytes")
 
 
 if __name__ == "__main__":

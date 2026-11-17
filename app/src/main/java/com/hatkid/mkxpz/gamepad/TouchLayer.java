@@ -1,5 +1,7 @@
 package com.hatkid.mkxpz.gamepad;
 
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -10,6 +12,10 @@ import android.util.AttributeSet;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
+import android.widget.Toast;
+
+import java.io.File;
+import java.io.FileInputStream;
 
 import org.libsdl.app.SDLActivity;
 
@@ -84,6 +90,65 @@ public class TouchLayer extends View
         mStroke.setStrokeWidth(3f);
         mText.setTextAlign(Paint.Align.CENTER);
         mText.setColor(Color.argb(210, 255, 255, 255));
+        startClipboardWatcher();
+    }
+
+    /**
+     * RGSS has no clipboard API, so the injected Ruby layer drops the text
+     * it wants copied into a small file inside the game directory and this
+     * poller forwards it to the real system clipboard.
+     *
+     * File-as-mailbox keeps the engine binary untouched (no .so rebuild)
+     * and works on every API level we support. The game runs in the
+     * foreground whenever this fires, which is what Android 10+ requires
+     * for clipboard writes.
+     */
+    private void startClipboardWatcher()
+    {
+        mHandler.postDelayed(new Runnable()
+        {
+            @Override public void run()
+            {
+                pollClipboardRequest();
+                mHandler.postDelayed(this, 450);
+            }
+        }, 450);
+    }
+
+    private void pollClipboardRequest()
+    {
+        try
+        {
+            File f = new File(getContext().getFilesDir(), "game/tj_clipboard");
+            if (!f.exists())
+                return;
+            long len = f.length();
+            if (len <= 0 || len > 512)
+            {
+                f.delete();
+                return;
+            }
+            byte[] buf = new byte[(int) len];
+            FileInputStream in = new FileInputStream(f);
+            int read = in.read(buf);
+            in.close();
+            f.delete();
+            if (read <= 0)
+                return;
+            String text = new String(buf, 0, read, "UTF-8").trim();
+            if (text.length() == 0)
+                return;
+            ClipboardManager cm = (ClipboardManager)
+                    getContext().getSystemService(Context.CLIPBOARD_SERVICE);
+            if (cm == null)
+                return;
+            cm.setPrimaryClip(ClipData.newPlainText("TianJiangFengYun", text));
+            Toast.makeText(getContext(), "已复制：" + text, Toast.LENGTH_SHORT).show();
+        }
+        catch (Exception e)
+        {
+            // 剪贴板被系统策略拒绝时不打扰玩家，下次再试
+        }
     }
 
     @Override

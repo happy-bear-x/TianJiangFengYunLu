@@ -129,6 +129,51 @@ module TJTouch
     end
 
     #--------------------------------------------------------------------------
+    # 设置页「游戏相关」：点右侧内容区复制 Q 群号。
+    # RGSS 没有剪贴板接口，这里把号码写进游戏目录下的 tj_clipboard，
+    # Java 侧 TouchLayer 每 450ms 轮询一次并调用系统 ClipboardManager，
+    # 复制完删除文件。不碰引擎二进制，也不用重编 .so。
+    #--------------------------------------------------------------------------
+    COPY_MAILBOX = "tj_clipboard"
+    GROUP_TEXT = "1134180232"
+
+    def info_page?
+      return false unless defined?(Scene_Task) && $scene.is_a?(Scene_Task)
+      w = $scene.instance_variable_get(:@task_info_window)
+      return false if w.nil?
+      tid = w.instance_variable_get(:@task_id)
+      if tid.nil?
+        task = begin
+          $game_party.latest_task
+        rescue Exception
+          nil
+        end
+        tid = task.id if task
+      end
+      # @tasks_info[1] 就是「游戏相关」那一页
+      tid == 1
+    rescue Exception
+      false
+    end
+
+    def info_window_at?(x, y)
+      return false unless info_page?
+      w = $scene.instance_variable_get(:@task_info_window)
+      return false if w.nil?
+      return false if x < w.x || x >= w.x + w.width
+      return false if y < w.y || y >= w.y + w.height
+      true
+    rescue Exception
+      false
+    end
+
+    def copy_group_number
+      File.open(COPY_MAILBOX, "w") { |f| f.write(GROUP_TEXT) }
+      true
+    rescue Exception
+      false
+    end
+    #--------------------------------------------------------------------------
     # 存档 / 读档界面：不是「一个可选窗口列表」，而是 4 个独立的
     # Window_SaveFile（每个高 104），选择状态由 Scene_File 的 @file_index
     # 维护。通用 hit_test 靠 index= 找目标，这批窗口没有 index=，所以
@@ -250,6 +295,12 @@ module TJTouch
         return
       end
 
+      # 设置页「游戏相关」：点内容区复制群号（要在「点空白=返回」之前拦）
+      if info_window_at?(x, y)
+        copy_group_number
+        return
+      end
+
       hit = hit_test(x, y)
       if hit
         w = hit[1]
@@ -314,6 +365,18 @@ end
   klass.class_eval do
     def tj_row_h
       24
+    end
+  end
+end
+
+# Window_Task 只在 refresh 里用 task_id，不保存下来；触摸层要知道
+# 当前展示的是哪一页（只有「游戏相关」页才复制群号），这里补一个记录。
+if defined?(Window_Task)
+  class Window_Task
+    alias_method :tj_touch_refresh, :refresh
+    def refresh(task_id)
+      @task_id = task_id
+      tj_touch_refresh(task_id)
     end
   end
 end
