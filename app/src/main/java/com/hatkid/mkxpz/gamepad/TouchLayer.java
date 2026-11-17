@@ -160,11 +160,14 @@ public class TouchLayer extends View
         mJoyRadius = base * 0.13f;
         mDeadZone = mJoyRadius * 0.18f;
         mBtnRadius = base * 0.075f;
-        mText.setTextSize(mBtnRadius * 0.62f);
-        mConfirmX = w * 0.90f;
-        mConfirmY = h * 0.70f;
-        mCancelX = w * 0.78f;
-        mCancelY = h * 0.87f;
+        // Xbox face-button geometry: A sits at the bottom of the diamond,
+        // B to its upper right. Windows / Android players read position
+        // before letter, so the on-screen pair mirrors a physical pad
+        // instead of the old Nintendo-style (A right, B bottom) layout.
+        mConfirmX = w * 0.835f;   // A — confirm, lower button
+        mConfirmY = h * 0.875f;
+        mCancelX = w * 0.925f;    // B — cancel, right button
+        mCancelY = h * 0.755f;
         mHomeX = w * JOY_HOME_X;
         mHomeY = h * JOY_HOME_Y;
     }
@@ -394,8 +397,10 @@ public class TouchLayer extends View
     protected void onDraw(Canvas c)
     {
         super.onDraw(c);
-        drawButton(c, mConfirmX, mConfirmY, "选中", mBtnKey == KEY_CONFIRM);
-        drawButton(c, mCancelX, mCancelY, "返回", mBtnKey == KEY_CANCEL);
+        // Letter first, meaning second: pad users scan for A/B, touch-only
+        // players fall back to the Chinese verb underneath.
+        drawButton(c, mConfirmX, mConfirmY, "A", "确定", mBtnKey == KEY_CONFIRM);
+        drawButton(c, mCancelX, mCancelY, "B", "返回", mBtnKey == KEY_CANCEL);
 
         if (mJoyPointer >= 0)
         {
@@ -422,7 +427,7 @@ public class TouchLayer extends View
         }
     }
 
-    private void drawButton(Canvas c, float x, float y, String label, boolean pressed)
+    private void drawButton(Canvas c, float x, float y, String letter, String label, boolean pressed)
     {
         mFill.setStyle(Paint.Style.FILL);
         mFill.setColor(pressed ? Color.argb(115, 255, 255, 255)
@@ -430,7 +435,13 @@ public class TouchLayer extends View
         mStroke.setColor(Color.argb(95, 255, 255, 255));
         c.drawCircle(x, y, mBtnRadius, mFill);
         c.drawCircle(x, y, mBtnRadius, mStroke);
+        // Xbox face buttons are prominent glyphs, so the letter gets the
+        // large slot above centre and the action word rides beneath it.
+        mText.setTextSize(mBtnRadius * 0.74f);
         Paint.FontMetrics fm = mText.getFontMetrics();
-        c.drawText(label, x, y - (fm.ascent + fm.descent) / 2f, mText);
+        c.drawText(letter, x, y - mBtnRadius * 0.20f - (fm.ascent + fm.descent) / 2f, mText);
+        mText.setTextSize(mBtnRadius * 0.34f);
+        fm = mText.getFontMetrics();
+        c.drawText(label, x, y + mBtnRadius * 0.48f - (fm.ascent + fm.descent) / 2f, mText);
     }
 }

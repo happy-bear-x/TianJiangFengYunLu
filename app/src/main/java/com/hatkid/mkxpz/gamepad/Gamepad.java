@@ -21,7 +21,13 @@ import com.hatkid.mkxpz.R;
  */
 public class Gamepad
 {
+    private static final int DIR_UP    = 1;
+    private static final int DIR_DOWN  = 2;
+    private static final int DIR_LEFT  = 4;
+    private static final int DIR_RIGHT = 8;
+
     private boolean mInvisible = false;
+    private int mStickMask = 0;
 
     private OnKeyDownListener mOnKeyDownListener = key -> {};
     private OnKeyUpListener mOnKeyUpListener = key -> {};
@@ -95,6 +101,42 @@ public class Gamepad
         }
     }
 
+    /**
+     * Android reports physical pad buttons with dedicated key codes
+     * (KEYCODE_BUTTON_A = 96, ...), but mkxp-z's input layer is driven by
+     * keyboard scancodes: SDLActivity only hands controller-sized codes to
+     * SDLControllerManager when its own dispatchKeyEvent runs, and
+     * MainActivity intercepts pad events before that. Passing 96 straight
+     * through onNativeKeyDown therefore lands on an unmapped scancode and
+     * the game ignores it.
+     *
+     * Translating to the codes RGSS1 actually binds restores native pad
+     * play with no engine change. Targets come from mkxp-z's
+     * defaultCtrlBindings plus defaultKbBindings1:
+     *   A -> Space (Input::C, confirm)     B -> X (Input::B, cancel/menu)
+     *   X -> Shift (Input::A)              Y -> A (Input::X)
+     *   L1/R1 -> Q/W (Input::L/R)          Start -> Esc (Input::B, menu)
+     */
+    private static int mapPadKey(int keyCode)
+    {
+        switch (keyCode)
+        {
+            case KeyEvent.KEYCODE_BUTTON_A:      return KeyEvent.KEYCODE_SPACE;
+            case KeyEvent.KEYCODE_BUTTON_B:      return KeyEvent.KEYCODE_X;
+            case KeyEvent.KEYCODE_BUTTON_X:      return KeyEvent.KEYCODE_SHIFT_LEFT;
+            case KeyEvent.KEYCODE_BUTTON_Y:      return KeyEvent.KEYCODE_A;
+            case KeyEvent.KEYCODE_BUTTON_L1:     return KeyEvent.KEYCODE_Q;
+            case KeyEvent.KEYCODE_BUTTON_R1:     return KeyEvent.KEYCODE_W;
+            case KeyEvent.KEYCODE_BUTTON_L2:     return KeyEvent.KEYCODE_PAGE_UP;
+            case KeyEvent.KEYCODE_BUTTON_R2:     return KeyEvent.KEYCODE_PAGE_DOWN;
+            case KeyEvent.KEYCODE_BUTTON_START:  return KeyEvent.KEYCODE_ESCAPE;
+            case KeyEvent.KEYCODE_BUTTON_SELECT: return KeyEvent.KEYCODE_ESCAPE;
+            default:
+                // D-pad and unbound buttons already carry scancodes mkxp maps.
+                return keyCode;
+        }
+    }
+
     /** Physical gamepad buttons still go through the original SDL key path. */
     public boolean processGamepadEvent(KeyEvent evt)
     {
@@ -103,15 +145,20 @@ public class Gamepad
         if (device == null)
             return false;
 
+        // System back must keep working as back, not become a game button.
+        if (evt.getKeyCode() == KeyEvent.KEYCODE_BACK)
+            return false;
+
         int sources = device.getSources();
 
         if (
             ((sources & InputDevice.SOURCE_GAMEPAD) != InputDevice.SOURCE_GAMEPAD) &&
-            ((sources & InputDevice.SOURCE_DPAD) != InputDevice.SOURCE_DPAD)
+            ((sources & InputDevice.SOURCE_DPAD) != InputDevice.SOURCE_DPAD) &&
+            ((sources & InputDevice.SOURCE_JOYSTICK) != InputDevice.SOURCE_JOYSTICK)
         )
             return false;
 
-        int keycode = evt.getKeyCode();
+        int keycode = mapPadKey(evt.getKeyCode());
 
         switch (evt.getAction())
         {
@@ -128,7 +175,11 @@ public class Gamepad
         return true;
     }
 
-    /** Physical D-pad hat events, unchanged from the upstream port. */
+    /**
+     * D-pad hat and left-stick axes, both folded into the RGSS direction
+     * keys. Hat wins when both report at once, matching how pads behave
+     * during the overlap at the edge of a press.
+     */
     public boolean processDPadEvent(MotionEvent evt)
     {
         InputDevice device = evt.getDevice();
@@ -138,38 +189,66 @@ public class Gamepad
 
         int sources = device.getSources();
 
-        if (((sources & InputDevice.SOURCE_DPAD) != InputDevice.SOURCE_DPAD))
+        if ((sources & (InputDevice.SOURCE_DPAD
+                     | InputDevice.SOURCE_GAMEPAD
+                     | InputDevice.SOURCE_JOYSTICK)) == 0)
             return false;
 
         float xAxis = evt.getAxisValue(MotionEvent.AXIS_HAT_X);
         float yAxis = evt.getAxisValue(MotionEvent.AXIS_HAT_Y);
+        float lx = evt.getAxisValue(MotionEvent.AXIS_X);
+        float ly = evt.getAxisValue(MotionEvent.AXIS_Y);
 
-        Integer keycode = null;
+        int mask = 0;
 
-        if (Float.compare(yAxis, -1.0f) == 0)
-            keycode = KeyEvent.KEYCODE_DPAD_UP;
-        else if (Float.compare(yAxis, 1.0f) == 0)
-            keycode = KeyEvent.KEYCODE_DPAD_DOWN;
-        else if (Float.compare(xAxis, -1.0f) == 0)
-            keycode = KeyEvent.KEYCODE_DPAD_LEFT;
-        else if (Float.compare(xAxis, 1.0f) == 0)
-            keycode = KeyEvent.KEYCODE_DPAD_RIGHT;
-
-        if (keycode == null)
-            return false;
-
-        switch (evt.getAction())
+        if (Math.abs(xAxis) > 0.5f || Math.abs(yAxis) > 0.5f)
         {
-            case MotionEvent.ACTION_DOWN:
-                mOnKeyDownListener.onKeyDown(keycode);
-                break;
-
-            case MotionEvent.ACTION_CANCEL:
-            case MotionEvent.ACTION_UP:
-                mOnKeyUpListener.onKeyUp(keycode);
-                break;
+            if (xAxis < -0.5f) mask |= DIR_LEFT;
+            if (xAxis >  0.5f) mask |= DIR_RIGHT;
+            if (yAxis < -0.5f) mask |= DIR_UP;
+            if (yAxis >  0.5f) mask |= DIR_DOWN;
+        }
+        else if (Math.abs(lx) > STICK_DEADZONE || Math.abs(ly) > STICK_DEADZONE)
+        {
+            // Stick sign convention matches the touch joystick: screen +y is down.
+            if (lx < -STICK_DEADZONE) mask |= DIR_LEFT;
+            if (lx >  STICK_DEADZONE) mask |= DIR_RIGHT;
+            if (ly < -STICK_DEADZONE) mask |= DIR_UP;
+            if (ly >  STICK_DEADZONE) mask |= DIR_DOWN;
         }
 
+        if (mask != mStickMask)
+        {
+            syncDirection(DIR_UP,    KeyEvent.KEYCODE_DPAD_UP,    mask);
+            syncDirection(DIR_DOWN,  KeyEvent.KEYCODE_DPAD_DOWN,  mask);
+            syncDirection(DIR_LEFT,  KeyEvent.KEYCODE_DPAD_LEFT,  mask);
+            syncDirection(DIR_RIGHT, KeyEvent.KEYCODE_DPAD_RIGHT, mask);
+            mStickMask = mask;
+        }
+
+        // Own all motion from pad devices so SDL never sees a duplicate axis.
         return true;
+    }
+
+    private static final float STICK_DEADZONE = 0.45f;
+
+    private void syncDirection(int bit, int keycode, int mask)
+    {
+        boolean was = (mStickMask & bit) != 0;
+        boolean now = (mask & bit) != 0;
+        if (now && !was) mOnKeyDownListener.onKeyDown(keycode);
+        else if (!now && was) mOnKeyUpListener.onKeyUp(keycode);
+    }
+
+    /** Drop any held direction when the pad disconnects. */
+    public void resetDirections()
+    {
+        if (mStickMask == 0)
+            return;
+        syncDirection(DIR_UP,    KeyEvent.KEYCODE_DPAD_UP,    0);
+        syncDirection(DIR_DOWN,  KeyEvent.KEYCODE_DPAD_DOWN,  0);
+        syncDirection(DIR_LEFT,  KeyEvent.KEYCODE_DPAD_LEFT,  0);
+        syncDirection(DIR_RIGHT, KeyEvent.KEYCODE_DPAD_RIGHT, 0);
+        mStickMask = 0;
     }
 }
