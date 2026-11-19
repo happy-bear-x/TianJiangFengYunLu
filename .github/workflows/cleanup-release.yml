@@ -1,0 +1,50 @@
+name: Cleanup Release
+
+# 用途：删除指定版本的 Release（含附件），git tag 保留。
+#
+# 为什么用 push tag 触发，而不是 workflow_dispatch：
+#   部分网络环境下 github.com 主站不可达（网页、device flow 授权都用它），
+#   但 api.github.com 可达、SSH 可达。workflow_dispatch 必须先在网页或
+#   API 上点一下，而 push tag 只走 SSH —— 这是那种情况下唯一可用的控制通道。
+#
+# 用法：
+#   git tag cleanup-v1.6.0 && git push origin cleanup-v1.6.0
+#
+# 安全阀：latest release 一律拒绝删除；找不到对应 release 时什么也不做。
+
+on:
+  push:
+    tags:
+      - 'cleanup-*'
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Delete release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TARGET="${GITHUB_REF_NAME#cleanup-}"
+          echo "目标版本：$TARGET"
+
+          LATEST=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName 2>/dev/null || true)
+          echo "当前 latest：${LATEST:-<none>}"
+          if [ -n "$TARGET" ] && [ "$TARGET" = "$LATEST" ]; then
+            echo "::error::$TARGET 是当前 latest release，拒绝删除"
+            exit 1
+          fi
+
+          if gh release view "$TARGET" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release delete "$TARGET" --repo "$GITHUB_REPOSITORY" --yes
+            echo "已删除 release $TARGET（git tag 保留）"
+          else
+            echo "没有找到 release $TARGET，跳过"
+          fi
+
+          echo "清理触发用的临时 tag：$GITHUB_REF_NAME"
+          gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$GITHUB_REF_NAME" || true
