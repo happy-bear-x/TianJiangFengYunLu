@@ -4,6 +4,14 @@ on:
   push:
     tags:
       - 'v*'
+  # 手动触发：先在 app/build.gradle 里改好 versionCode / versionName，
+  # 再到 Actions 页面点 Run workflow 并填入同一个版本号（如 1.6.1）。
+  # 两边对不上会直接失败，避免发出"文件名版本号 ≠ 包内版本号"的 APK。
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（不含 v，如 1.6.1），须与 build.gradle 的 versionName 一致'
+        required: true
 
 permissions:
   contents: write
@@ -15,6 +23,30 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: ver
+        run: |
+          RAW="${{ github.event.inputs.version }}"
+          if [ -z "$RAW" ]; then
+            RAW="${GITHUB_REF_NAME}"
+          fi
+          case "$RAW" in
+            v*) TAG="$RAW" ;;
+            *)  TAG="v$RAW" ;;
+          esac
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          echo "发布版本：$TAG"
+
+      - name: Verify version matches build.gradle
+        run: |
+          GRADLE_VER=$(sed -n 's/.*versionName[[:space:]]*"\([^"]*\)".*/\1/p' app/build.gradle | head -1)
+          WANT="${{ steps.ver.outputs.version }}"
+          if [ "$GRADLE_VER" != "$WANT" ]; then
+            echo "::error::app/build.gradle 的 versionName=$GRADLE_VER，与要发布的 $WANT 不一致，请先改 build.gradle"
+            exit 1
+          fi
 
       - name: Set up JDK
         uses: actions/setup-java@v4
@@ -47,14 +79,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          TAG="${{ steps.ver.outputs.tag }}"
+          VERSION="${{ steps.ver.outputs.version }}"
           APK="TianJiangFengYun-${VERSION}.apk"
           cp app/build/outputs/apk/debug/app-debug.apk "$APK"
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" "$APK" --clobber
-            gh release delete-asset "$GITHUB_REF_NAME" app-debug.apk --yes || true
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$APK" --clobber
+            gh release delete-asset "$TAG" app-debug.apk --yes || true
           else
-            gh release create "$GITHUB_REF_NAME" "$APK" \
-              --title "天降风云录16-10 ${GITHUB_REF_NAME}" \
+            gh release create "$TAG" "$APK" \
+              --title "天降风云录16-10 $TAG" \
               --notes-file docs/RELEASE_NOTES.md
           fi
