@@ -1,6 +1,8 @@
 class VisibleEnemy < Game_Character
   attr_accessor :troop_id
   attr_accessor :in_battle
+  # 地图上对应的 Sprite_Character，进战斗时要显式收掉。
+  attr_accessor :sprite
 
   def initialize(x, y, troop_id, sprite_name)
     super()
@@ -101,11 +103,26 @@ class VisibleEnemyManager
     enemy = front_enemy if enemy.nil? and Input.dir4 != 0 and not $game_player.moving?
     return unless enemy
     enemy.in_battle = true
+    troop_id = enemy.troop_id
+    # 战斗马上开始，把地图上的这只精灵收掉：以前 in_battle 只是停更，
+    # sprite 仍留在 @character_sprites 里，战斗结束回地图就会看到一只
+    # 不会动的“残影”。
+    despawn(enemy)
     $game_temp.battle_calling = true
-    $game_temp.battle_troop_id = enemy.troop_id
+    $game_temp.battle_troop_id = troop_id
     $game_temp.battle_can_escape = true
     $game_temp.battle_can_lose = false
     $game_temp.battle_proc = nil
+  end
+
+  def despawn(enemy)
+    return if enemy.nil?
+    @enemies.delete(enemy)
+    sprite = enemy.sprite
+    return if sprite.nil?
+    @character_sprites.delete(sprite)
+    sprite.dispose rescue nil
+    enemy.sprite = nil
   end
 
   def occupied?(x, y, except)
@@ -122,6 +139,9 @@ class VisibleEnemyManager
 
   def dispose
     @active = false
+    # 逐个收回精灵：以前只 clear 数组，@character_sprites 里还挂着已经
+    # 无效的敌人（上层 dispose 时虽然兜底了，但这里保持自洽）。
+    @enemies.dup.each { |enemy| despawn(enemy) }
     @enemies.clear
   end
 
@@ -145,8 +165,10 @@ class VisibleEnemyManager
     spot = find_spawn_spot
     return unless spot
     enemy = VisibleEnemy.new(spot[0], spot[1], troop_id, sprite_for_troop(troop))
+    sprite = Sprite_Character.new(@viewport, enemy)
+    enemy.sprite = sprite
     @enemies.push(enemy)
-    @character_sprites.push(Sprite_Character.new(@viewport, enemy))
+    @character_sprites.push(sprite)
   end
 
   def find_spawn_spot
