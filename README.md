@@ -149,6 +149,12 @@ app/src/main/jniLibs/armeabi-v7a/
    app/build/outputs/apk/debug/app-debug.apk
    ```
 
+> **构建请务必带 `clean`**：`app/src/main/assets/game.zip` 是脚本直接改写的
+> （该文件在 `.gitignore` 里），AGP 的增量打包会在旧副本后面再追加一份，
+> 结果是 APK 里多出一段不被索引的死数据。实测同一份素材，增量构建出来
+> 174 MB，`clean` 之后是 100 MB，功能完全一样——纯属浪费。
+> Release 工作流用的就是 `clean assembleDebug`，所以线上包一直是干净的。
+
 > 仅支持 ARM64 / ARMv7（`arm64-v8a`、`armeabi-v7a`）。
 
 ### 生成 game.zip / core.zip
