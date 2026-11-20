@@ -1,28 +1,46 @@
 name: Build and Release APK
 
+# 一次发版出两个 APK：
+#   original  <- main       移植原版，游戏内容不动，只做适配与修 bug
+#   optimized <- optimized  优化版，自动存档等体验增强
+#
+# 两者包名相同（com.tianjiang.fengyun），所以玩家二选一；覆盖安装不丢档。
+# 文件名：TianJiangFengYun-<版本>.apk（原版，沿用旧链接）
+#         TianJiangFengYun-<版本>-optimized.apk（优化版）
+
 on:
   push:
     tags:
       - 'v*'
-  # 手动触发：先在 app/build.gradle 里改好 versionCode / versionName，
-  # 再到 Actions 页面点 Run workflow 并填入同一个版本号（如 1.6.1）。
-  # 两边对不上会直接失败，避免发出"文件名版本号 ≠ 包内版本号"的 APK。
+  # 手动触发：先在**两个分支**的 app/build.gradle 里把 versionCode /
+  # versionName 改成同一个值，再到 Actions 页面点 Run workflow。
+  # 任一边对不上都会失败，避免发出"文件名版本号 ≠ 包内版本号"的 APK。
   workflow_dispatch:
     inputs:
       version:
-        description: '版本号（不含 v，如 1.6.1），须与 build.gradle 的 versionName 一致'
+        description: '版本号（不含 v，如 1.7.0），须与两个分支的 versionName 一致'
         required: true
 
 permissions:
   contents: write
 
 jobs:
-  release:
+  build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ref: main
+            label: original
+          - ref: optimized
+            label: optimized
     steps:
-      - name: Checkout
+      - name: Checkout (${{ matrix.label }} @ ${{ matrix.ref }})
         uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.ref }}
 
       - name: Resolve version
         id: ver
@@ -37,14 +55,14 @@ jobs:
           esac
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
-          echo "发布版本：$TAG"
+          echo "[${{ matrix.label }}] 版本：$TAG"
 
       - name: Verify version matches build.gradle
         run: |
           GRADLE_VER=$(sed -n 's/.*versionName[[:space:]]*"\([^"]*\)".*/\1/p' app/build.gradle | head -1)
           WANT="${{ steps.ver.outputs.version }}"
           if [ "$GRADLE_VER" != "$WANT" ]; then
-            echo "::error::app/build.gradle 的 versionName=$GRADLE_VER，与要发布的 $WANT 不一致，请先改 build.gradle"
+            echo "::error::[${{ matrix.label }}] app/build.gradle 的 versionName=$GRADLE_VER，与要发布的 $WANT 不一致"
             exit 1
           fi
 
@@ -75,19 +93,69 @@ jobs:
           chmod +x gradlew
           ./gradlew clean assembleDebug --no-daemon
 
+      - name: Collect artifact
+        run: |
+          VERSION="${{ steps.ver.outputs.version }}"
+          if [ "${{ matrix.label }}" = "original" ]; then
+            NAME="TianJiangFengYun-${VERSION}.apk"
+          else
+            NAME="TianJiangFengYun-${VERSION}-optimized.apk"
+          fi
+          cp app/build/outputs/apk/debug/app-debug.apk "$NAME"
+          echo "artifact=$NAME" >> "$GITHUB_ENV"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk-${{ matrix.label }}
+          path: ${{ env.artifact }}
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout (for notes)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Resolve version
+        id: ver
+        run: |
+          RAW="${{ github.event.inputs.version }}"
+          if [ -z "$RAW" ]; then
+            RAW="${GITHUB_REF_NAME}"
+          fi
+          case "$RAW" in
+            v*) TAG="$RAW" ;;
+            *)  TAG="v$RAW" ;;
+          esac
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
       - name: Create or update release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${{ steps.ver.outputs.tag }}"
           VERSION="${{ steps.ver.outputs.version }}"
-          APK="TianJiangFengYun-${VERSION}.apk"
-          cp app/build/outputs/apk/debug/app-debug.apk "$APK"
+          ls -lh dist
+          OLD="TianJiangFengYun-${VERSION}.apk"
+          NEW="TianJiangFengYun-${VERSION}-optimized.apk"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "$APK" --clobber
+            gh release upload "$TAG" dist/*.apk --clobber
             gh release delete-asset "$TAG" app-debug.apk --yes || true
           else
-            gh release create "$TAG" "$APK" \
+            gh release create "$TAG" dist/*.apk \
               --title "天降风云录16-10 $TAG" \
               --notes-file docs/RELEASE_NOTES.md
           fi
+          echo "已发布：$OLD（原版）/ $NEW（优化版）"
