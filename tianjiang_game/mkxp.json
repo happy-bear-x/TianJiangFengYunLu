@@ -6,6 +6,7 @@
   "smoothScaling": false,
   "integerScalingActive": false,
   "integerScalingLastMile": false,
+  "hdUpscale": true,
   "vsync": true,
   "defScreenW": 640,
   "defScreenH": 480,
