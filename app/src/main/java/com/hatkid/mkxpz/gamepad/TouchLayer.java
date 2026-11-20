@@ -176,8 +176,29 @@ public class TouchLayer extends View
         mHomeY = h * JOY_HOME_Y;
     }
 
+    /**
+     * Save/load lists put a full-width row at the bottom of the screen and
+     * that strip overlaps the joystick catch area, so taps on it used to be
+     * swallowed by the stick. The Ruby side drops this marker file while
+     * such a scene is open and Scene_Map clears it again, so a crashed
+     * scene can never leave the stick permanently disabled.
+     */
+    private boolean joystickSuppressed()
+    {
+        try
+        {
+            return new java.io.File(getContext().getFilesDir(), "game/tj_joy_off").exists();
+        }
+        catch (Exception e)
+        {
+            return false;
+        }
+    }
+
     private boolean inJoystickZone(float x, float y)
     {
+        if (joystickSuppressed())
+            return false;
         return x < mWidth * JOY_ZONE_MAX_X && y > mHeight * JOY_ZONE_MIN_Y;
     }
 

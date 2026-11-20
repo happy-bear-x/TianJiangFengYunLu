@@ -188,7 +188,28 @@ module TJTouch
       nil
     end
 
+    # 底部「自动存档」入口（只在读档界面存在，TJ_AutoSave 注入）
+    def autosave_window
+      return nil unless defined?(Scene_File) && $scene.is_a?(Scene_File)
+      $scene.instance_variable_get(:@autosave_window)
+    rescue Exception
+      nil
+    end
+
     def save_slot_at(x, y)
+      # 先看底部入口条：它不在 @savefile_windows 里，通用命中摸不到
+      aw = autosave_window
+      if aw
+        begin
+          ax = aw.x || 0
+          ay = aw.y || 0
+          if x >= ax && x < ax + (aw.width || 0) &&
+             y >= ay && y < ay + (aw.height || 0)
+            return :autosave
+          end
+        rescue Exception
+        end
+      end
       wins = savefile_windows
       return nil unless wins
       wins.each_with_index do |w, i|
@@ -210,6 +231,28 @@ module TJTouch
 
     # 点哪个格子就把 @file_index 移过去并直接确认 —— 触屏上没人愿意
     # 先点选中、再跑去按「选中按钮」。
+    # 点「自动存档」入口：把光标移到底部并确认，交给 Scene_File#update
+    # 切到 Scene_AutoSave（5 份轮换的二级界面）
+    def click_autosave_entry
+      aw = autosave_window
+      return unless aw
+      cur = $scene.instance_variable_get(:@file_index).to_i
+      wins = savefile_windows
+      if wins && cur >= 0 && cur < wins.size && wins[cur]
+        begin
+          wins[cur].selected = false
+        rescue Exception
+        end
+      end
+      $scene.instance_variable_set(:@file_index, 4)
+      begin
+        aw.selected = true
+        $game_system.se_play($data_system.cursor_se)
+      rescue Exception
+      end
+      press(Input::C)
+    end
+
     def click_save_slot(i)
       wins = savefile_windows
       cur = $scene.instance_variable_get(:@file_index).to_i
@@ -290,7 +333,10 @@ module TJTouch
 
       # 存档/读档优先：这四个格子不是可选窗口，走不了通用命中
       slot = save_slot_at(x, y)
-      if !slot.nil?
+      if slot == :autosave
+        click_autosave_entry
+        return
+      elsif !slot.nil?
         click_save_slot(slot)
         return
       end
