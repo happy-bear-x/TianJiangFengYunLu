@@ -63,6 +63,11 @@ struct Config {
         bool active;
         bool lastMileScaling;
     } integerScaling;
+
+    /* Run the MMPX 2x upscaler before the final blit. Fully independent
+     * of integerScaling: the intermediate buffer is always exactly 2x the
+     * canvas, so it works on any screen resolution. */
+    bool hdUpscale;
     
     std::string gameFolder;
     bool manualFolderSelect;

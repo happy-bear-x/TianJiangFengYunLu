@@ -814,6 +814,10 @@ struct GraphicsPrivate {
     TEXFBO integerScaleBuffer;
     bool integerScaleActive;
     bool integerLastMileScaling;
+
+    /* MMPX path: canvas -> hdUpscaleBuffer (2x) -> window */
+    TEXFBO hdUpscaleBuffer;
+    bool hdUpscaleActive;
     
     std::vector<unsigned long long> avgFPSData;
     unsigned long long last_avg_update;
@@ -835,7 +839,8 @@ struct GraphicsPrivate {
     fpsLimiter(frameRate), useFrameSkip(rtData->config.frameSkip), frozen(false),
     last_update(0), last_avg_update(0), backingScaleFactor(1), integerScaleFactor(0, 0),
     integerScaleActive(rtData->config.integerScaling.active),
-    integerLastMileScaling(rtData->config.integerScaling.lastMileScaling) {
+    integerLastMileScaling(rtData->config.integerScaling.lastMileScaling),
+    hdUpscaleActive(rtData->config.hdUpscale) {
         avgFPSData = std::vector<unsigned long long>();
         avgFPSLock = SDL_CreateMutex();
         glResourceLock = SDL_CreateMutex();
@@ -843,6 +848,10 @@ struct GraphicsPrivate {
         if (integerScaleActive) {
             integerScaleFactor = Vec2i(0, 0);
             rebuildIntegerScaleBuffer();
+        }
+
+        if (hdUpscaleActive) {
+            rebuildHDUpscaleBuffer();
         }
         
         recalculateScreenSize(rtData->config.fixedAspectRatio);
@@ -861,6 +870,7 @@ struct GraphicsPrivate {
     ~GraphicsPrivate() {
         TEXFBO::fini(frozenScene);
         TEXFBO::fini(integerScaleBuffer);
+        TEXFBO::fini(hdUpscaleBuffer);
         SDL_DestroyMutex(avgFPSLock);
         SDL_DestroyMutex(glResourceLock);
     }
@@ -937,6 +947,16 @@ struct GraphicsPrivate {
         TEXFBO::allocEmpty(integerScaleBuffer, scRes.x * integerScaleFactor.x,
                            scRes.y * integerScaleFactor.y);
         TEXFBO::linkFBO(integerScaleBuffer);
+    }
+
+    /* MMPX is a fixed 2x operator, so this buffer is always twice the
+     * canvas regardless of the window size. */
+    void rebuildHDUpscaleBuffer()
+    {
+        TEXFBO::fini(hdUpscaleBuffer);
+        TEXFBO::init(hdUpscaleBuffer);
+        TEXFBO::allocEmpty(hdUpscaleBuffer, scRes.x * 2, scRes.y * 2);
+        TEXFBO::linkFBO(hdUpscaleBuffer);
     }
     
     bool integerScaleStepApplicable() const
@@ -1023,9 +1043,26 @@ struct GraphicsPrivate {
     
     void redrawScreen() {
         screen.composite();
-        
+
+        /* MMPX pass: canvas -> hdUpscaleBuffer at exactly 2x.
+         * Falls back to the unmodified path if the shader could not be
+         * compiled on this device. */
+        bool hdReady = false;
+
+        if (hdUpscaleActive)
+        {
+            GLMeta::blitBegin(hdUpscaleBuffer);
+            GLMeta::blitSource(screen.getPP().frontBuffer());
+
+            hdReady = GLMeta::blitRectangleMMPX(
+                        IntRect(0, 0, scRes.x, scRes.y),
+                        IntRect(0, 0, hdUpscaleBuffer.width, hdUpscaleBuffer.height));
+
+            GLMeta::blitEnd();
+        }
+
         // maybe unspaghetti this later
-        if (integerScaleStepApplicable() && !integerLastMileScaling)
+        if (integerScaleStepApplicable() && !integerLastMileScaling && !hdReady)
         {
             GLMeta::blitBeginScreen(winSize);
             GLMeta::blitSource(screen.getPP().frontBuffer());
@@ -1038,7 +1075,7 @@ struct GraphicsPrivate {
             return;
         }
         
-        if (integerScaleStepApplicable())
+        if (integerScaleStepApplicable() && !hdReady)
         {
             assert(integerScaleBuffer.tex != TEX::ID(0));
             GLMeta::blitBegin(integerScaleBuffer);
@@ -1056,7 +1093,12 @@ struct GraphicsPrivate {
         
         Vec2i sourceSize;
         
-        if (integerScaleActive)
+        if (hdReady)
+        {
+            GLMeta::blitSource(hdUpscaleBuffer);
+            sourceSize = Vec2i(hdUpscaleBuffer.width, hdUpscaleBuffer.height);
+        }
+        else if (integerScaleActive)
         {
             GLMeta::blitSource(integerScaleBuffer);
             sourceSize = Vec2i(integerScaleBuffer.width, integerScaleBuffer.height);
@@ -1416,6 +1458,9 @@ void Graphics::resizeScreen(int width, int height) {
     
     if (p->integerScaleActive)
         p->rebuildIntegerScaleBuffer();
+
+    if (p->hdUpscaleActive)
+        p->rebuildHDUpscaleBuffer();
     
     TEXFBO::allocEmpty(p->frozenScene, width, height);
     

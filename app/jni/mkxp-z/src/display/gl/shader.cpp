@@ -39,6 +39,7 @@
 #include "gray.frag.xxd"
 #include "flatColor.frag.xxd"
 #include "simple.frag.xxd"
+#include "mmpx.frag.xxd"
 #include "simpleColor.frag.xxd"
 #include "simpleAlpha.frag.xxd"
 #include "simpleAlphaUni.frag.xxd"
@@ -334,6 +335,39 @@ void SimpleShader::setTexOffsetX(int value)
 {
 	gl.Uniform1f(u_texOffsetX, value);
 }
+
+
+#ifndef MKXPZ_BUILD_XCODE
+
+MMPXShader::MMPXShader() : m_valid(false)
+{
+	try
+	{
+		INIT_SHADER(simple, mmpx, MMPXShader);
+		ShaderBase::init();
+		GET_U(texSize);
+		m_valid = true;
+	}
+	catch (const Exception &e)
+	{
+		/* Driver refused the shader (older GLES2 without fragment
+		 * highp, for instance). Leave the object invalid; redrawScreen
+		 * falls back to the regular blit. */
+		std::cerr << "MMPX shader unavailable: " << e.msg << std::endl;
+	}
+}
+
+void MMPXShader::setSourceSize(const Vec2i &value)
+{
+	gl.Uniform2f(u_texSize, (float)value.x, (float)value.y);
+}
+
+#else
+
+MMPXShader::MMPXShader() : m_valid(false) {}
+void MMPXShader::setSourceSize(const Vec2i &) {}
+
+#endif
 
 
 SimpleColorShader::SimpleColorShader()

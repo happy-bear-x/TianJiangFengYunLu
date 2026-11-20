@@ -24,6 +24,7 @@
 #include "sharedstate.h"
 #include "glstate.h"
 #include "quad.h"
+#include "shader.h"
 
 namespace GLMeta
 {
@@ -202,6 +203,35 @@ void blitRectangle(const IntRect &src, const IntRect &dst, bool smooth)
 		if (smooth)
 			TEX::setSmooth(false);
 	}
+}
+
+bool blitRectangleMMPX(const IntRect &src, const IntRect &dst)
+{
+	MMPXShader &shader = shState->shaders().mmpx;
+
+	if (!shader.valid())
+		return false;
+
+	/* MMPX maps every source texel onto a 2x2 block; anything else
+	 * would sample the wrong neighbours. */
+	if (dst.w != src.w * 2 || dst.h != src.h * 2)
+		return false;
+
+	glState.blend.pushSet(false);
+
+	shader.bind();
+	shader.applyViewportProj();
+	shader.setTranslation(Vec2i());
+	shader.setTexSize(Vec2i(src.w, src.h));
+	shader.setSourceSize(Vec2i(src.w, src.h));
+
+	Quad &quad = shState->gpQuad();
+	quad.setTexPosRect(src, dst);
+	quad.draw();
+
+	glState.blend.pop();
+
+	return true;
 }
 
 void blitEnd()

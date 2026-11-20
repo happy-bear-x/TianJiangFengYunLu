@@ -71,6 +71,12 @@ void blitSource(TEXFBO &source);
 void blitRectangle(const IntRect &src, const Vec2i &dstPos);
 void blitRectangle(const IntRect &src, const IntRect &dst,
                    bool smooth = false);
+
+/* MMPX 2x upscale. The destination rect must be exactly twice the source
+ * rect in both axes. Returns false when the MMPX shader is not available,
+ * in which case the caller should fall back to blitRectangle(). */
+bool blitRectangleMMPX(const IntRect &src, const IntRect &dst);
+
 void blitEnd();
 
 }

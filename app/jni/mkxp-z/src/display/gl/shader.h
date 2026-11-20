@@ -117,6 +117,26 @@ private:
 	GLint u_texOffsetX;
 };
 
+/* MMPX 2x pixel-art upscaler (see shader/mmpx.frag).
+ *
+ * Compilation is guarded: if the driver rejects the shader (e.g. no
+ * fragment highp) the object stays invalid and the caller falls back to
+ * the plain blit instead of aborting startup. */
+class MMPXShader : public ShaderBase
+{
+public:
+	MMPXShader();
+
+	/* Size of the *source* texture in pixels */
+	void setSourceSize(const Vec2i &value);
+
+	bool valid() const { return m_valid; }
+
+private:
+	GLint u_texSize;
+	bool m_valid;
+};
+
 class SimpleColorShader : public ShaderBase
 {
 public:
@@ -331,6 +351,7 @@ struct ShaderSet
 {
 	FlatColorShader flatColor;
 	SimpleShader simple;
+	MMPXShader mmpx;
 	SimpleColorShader simpleColor;
 	SimpleAlphaShader simpleAlpha;
 	SimpleSpriteShader simpleSprite;
