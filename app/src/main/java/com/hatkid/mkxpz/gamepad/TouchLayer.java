@@ -47,15 +47,19 @@ public class TouchLayer extends View
     private static final int KEY_CANCEL  = KeyEvent.KEYCODE_X;
 
     /**
-     * Joystick trigger zone. Kept to the bottom-left corner on purpose: it
-     * used to span the whole lower-left 60% of the screen, so tapping menu
-     * items that sit below the top-left menu (or any content along the left
-     * edge) summoned the joystick instead of a click.
+     * Joystick trigger zone ("跟手范围"): where a finger may land and still
+     * grab the stick. The knob itself keeps its own size (see mJoyRadius);
+     * this only decides how generous the catch area is. Widened from the
+     * old 30%/32% corner because reaching that far down-left forced the
+     * thumb to leave the screen edge on tall phones.
+     *
+     * Still an explicit box rather than the whole lower-left half: an
+     * oversized zone used to swallow taps meant for left-side menu items.
      */
-    private static final float JOY_ZONE_MAX_X   = 0.30f;   // left 30%
-    private static final float JOY_ZONE_MIN_Y   = 0.68f;   // bottom 32%
-    private static final float JOY_HOME_X       = 0.15f;   // idle hint centre
-    private static final float JOY_HOME_Y       = 0.86f;
+    private static final float JOY_ZONE_MAX_X   = 0.42f;   // left 42%
+    private static final float JOY_ZONE_MIN_Y   = 0.52f;   // bottom 48%
+    private static final float JOY_HOME_X       = 0.16f;   // idle hint centre
+    private static final float JOY_HOME_Y       = 0.78f;
 
     private int mWidth, mHeight;
     private float mJoyRadius, mDeadZone;
@@ -416,7 +420,7 @@ public class TouchLayer extends View
         {
             // Idle hint: just enough to show where the joystick lives,
             // faint enough to disappear over map art (alpha 20-40).
-            float r = mJoyRadius * 0.85f;
+            float r = mJoyRadius * 0.80f;
             mFill.setStyle(Paint.Style.FILL);
             mFill.setColor(Color.argb(20, 255, 255, 255));
             c.drawCircle(mHomeX, mHomeY, r, mFill);
