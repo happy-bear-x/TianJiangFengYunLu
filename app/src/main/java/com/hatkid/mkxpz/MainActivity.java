@@ -16,6 +16,7 @@ import android.view.InputDevice;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.FileObserver;
 import android.os.Vibrator;
 import android.os.VibrationEffect;
 import android.os.storage.StorageManager;
@@ -29,6 +30,7 @@ import java.io.File;
 import org.libsdl.app.SDLActivity;
 import com.hatkid.mkxpz.gamepad.Gamepad;
 import com.hatkid.mkxpz.gamepad.GamepadConfig;
+import com.hatkid.mkxpz.utils.SaveShare;
 
 public class MainActivity extends SDLActivity
 {
@@ -44,7 +46,9 @@ public class MainActivity extends SDLActivity
     protected boolean mStarted = false;
 
     private StorageManager mStorageManager;
-
+    // 存档共用到公共目录：目录监听 + 退出前兜底同步
+    private File saveSyncDir;
+    private FileObserver saveObserver;
     // In-screen gamepad
     private final Gamepad mGamepad = new Gamepad();
     private boolean mGamepadInvisible = false;
@@ -137,6 +141,13 @@ public class MainActivity extends SDLActivity
 
         writeScreenMetrics(gameDir);
 
+        // 存档共用：先把公共目录的最新进度拉进来，再盯着后续的存档
+        saveSyncDir = gameDir;
+        if (SaveShare.hasAccess(this)) {
+            SaveShare.sync(gameDir);
+            saveObserver = SaveShare.watch(gameDir);
+        }
+
         super.onCreate(savedInstanceState);
         applyImmersiveMode();
 
@@ -214,6 +225,16 @@ public class MainActivity extends SDLActivity
     }
 
     @Override
+    protected void onPause()
+    {
+        super.onPause();
+        // 切后台/退出前把存档回写公共目录，避免进程被直接杀掉丢进度
+        if (saveSyncDir != null && SaveShare.hasAccess(this)) {
+            SaveShare.sync(saveSyncDir);
+        }
+    }
+
+    @Override
     public void onWindowFocusChanged(boolean hasFocus)
     {
         super.onWindowFocusChanged(hasFocus);
@@ -250,6 +271,14 @@ public class MainActivity extends SDLActivity
     protected void onDestroy()
     {
         super.onDestroy();
+
+        if (saveObserver != null) {
+            saveObserver.stopWatching();
+            saveObserver = null;
+        }
+        if (saveSyncDir != null && SaveShare.hasAccess(this)) {
+            SaveShare.sync(saveSyncDir);
+        }
 
         // HACK: Exiting the JVM (process) since Ruby does not likes when we
         // trying to re-initialize Ruby VM in mkxp-z (JNI native library)

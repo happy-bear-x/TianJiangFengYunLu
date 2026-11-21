@@ -1,7 +1,9 @@
 package com.hatkid.mkxpz;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
@@ -12,6 +14,8 @@ import android.view.WindowInsetsController;
 import android.view.WindowManager;
 import android.widget.ProgressBar;
 import android.widget.TextView;
+
+import com.hatkid.mkxpz.utils.SaveShare;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
@@ -31,12 +35,16 @@ public class BootstrapActivity extends Activity {
     private static final String GAME_ZIP = "game.zip";
     private static final String CORE_ZIP = "core.zip";
     private static final String SAVE_BACKUP = "game_save_backup";
+    private static final int REQ_STORAGE = 1001;
 
     private TextView statusView;
     private TextView hintView;
     private ProgressBar progressView;
     private Thread extractThread;
     private volatile boolean extracting = false;
+    private File gameDir;
+    private boolean gameStarted = false;
+    private boolean awaitingAccess = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -48,10 +56,10 @@ public class BootstrapActivity extends Activity {
         hintView = findViewById(R.id.boot_hint);
         progressView = findViewById(R.id.boot_progress);
 
-        File gameDir = new File(getFilesDir(), GAME_DIR);
+        gameDir = new File(getFilesDir(), GAME_DIR);
         if (isReady(gameDir)) {
             refreshCoreFiles(gameDir);
-            startGame();
+            prepareSavesThenStart();
             return;
         }
 
@@ -159,12 +167,12 @@ public class BootstrapActivity extends Activity {
         if (extracting) return;
         extracting = true;
         progressView.setIndeterminate(true);
-        final File gameDir = new File(getFilesDir(), GAME_DIR);
+        final File target = new File(getFilesDir(), GAME_DIR);
 
         extractThread = new Thread(() -> {
             try {
-                extractGame(gameDir);
-                runOnUiThread(this::startGame);
+                extractGame(target);
+                runOnUiThread(this::prepareSavesThenStart);
             } catch (Exception e) {
                 Log.e(TAG, "Failed to unpack game data", e);
                 final String message = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
@@ -280,7 +288,79 @@ public class BootstrapActivity extends Activity {
         file.delete();
     }
 
+    /**
+     * 启动前先把公共存档同步进内部目录，再进游戏。
+     * 没权限就先引导一次授权；用户拒绝也照常启动，只是存档不跨版本共用。
+     */
+    private void prepareSavesThenStart() {
+        if (gameStarted) return;
+        if (SaveShare.hasAccess(this)) {
+            syncSaves();
+            startGame();
+            return;
+        }
+        if (!SaveShare.askedBefore(this)) {
+            showSaveAccessDialog();
+            return;
+        }
+        startGame();
+    }
+
+    private void syncSaves() {
+        try {
+            SaveShare.sync(gameDir);
+        } catch (Exception e) {
+            Log.e(TAG, "同步存档失败", e);
+        }
+    }
+
+    private void showSaveAccessDialog() {
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.save_share_title)
+                .setMessage(R.string.save_share_message)
+                .setCancelable(false)
+                .setPositiveButton(R.string.save_share_grant, (dialog, which) -> {
+                    SaveShare.markAsked(this);
+                    Intent intent = SaveShare.accessIntent(this);
+                    if (intent != null) {
+                        awaitingAccess = true;
+                        startActivity(intent);
+                    } else {
+                        awaitingAccess = true;
+                        requestPermissions(new String[]{
+                                android.Manifest.permission.READ_EXTERNAL_STORAGE,
+                                android.Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQ_STORAGE);
+                    }
+                })
+                .setNegativeButton(R.string.save_share_skip, (dialog, which) -> {
+                    SaveShare.markAsked(this);
+                    startGame();
+                })
+                .show();
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQ_STORAGE) {
+            awaitingAccess = false;
+            prepareSavesThenStart();
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // 从系统授权页返回，授权成功就直接进游戏
+        if (awaitingAccess) {
+            awaitingAccess = false;
+            prepareSavesThenStart();
+        }
+    }
+
     private void startGame() {
+        if (gameStarted) return;
+        gameStarted = true;
         Intent intent = new Intent(this, MainActivity.class);
         startActivity(intent);
         finish();

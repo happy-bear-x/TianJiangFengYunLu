@@ -16,7 +16,8 @@ android {
     }
 
     defaultConfig {
-        applicationId "com.tianjiang.fengyun"
+        // 高清重制版用独立包名，与原版并存；存档共用逻辑见 BootstrapActivity
+        applicationId "com.tianjiang.fengyun.hd"
         minSdk 23
         targetSdk 33
         versionCode 52
