@@ -137,6 +137,28 @@ private:
 	bool m_valid;
 };
 
+/* Sharp-bilinear, used as the final canvas -> window blit on the HD path.
+ * Nearest only reads correctly at integer scale factors; see the shader
+ * source for why the interpolation band is limited. */
+class SharpBilinearShader : public ShaderBase
+{
+public:
+	SharpBilinearShader();
+
+	/* Size of the *source* texture in pixels */
+	void setSourceSize(const Vec2i &value);
+
+	/* Size of the destination rectangle in pixels */
+	void setDestSize(const Vec2i &value);
+
+	bool valid() const { return m_valid; }
+
+private:
+	GLint u_texSize;
+	GLint u_destSize;
+	bool m_valid;
+};
+
 class SimpleColorShader : public ShaderBase
 {
 public:
@@ -368,6 +390,11 @@ struct ShaderSet
 	SimpleMatrixShader simpleMatrix;
 	BlurShader blur;
 	TilemapVXShader tilemapVX;
+
+	/* Appended at the end on purpose: this struct's members are built in
+	 * declaration order, and inserting in the middle would change the
+	 * GL object creation sequence for every shader after it. */
+	SharpBilinearShader sharpBilinear;
 };
 
 #endif // SHADER_H

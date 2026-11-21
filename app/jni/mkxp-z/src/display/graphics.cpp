@@ -826,6 +826,7 @@ struct GraphicsPrivate {
     /* MMPX path: canvas -> hdUpscaleBuffer (2x) -> window */
     TEXFBO hdUpscaleBuffer;
     bool hdUpscaleActive;
+    bool hdSharpFinal;
     int hdFailCount;
     bool hdLogged;
     
@@ -850,7 +851,8 @@ struct GraphicsPrivate {
     last_update(0), last_avg_update(0), backingScaleFactor(1), integerScaleFactor(0, 0),
     integerScaleActive(rtData->config.integerScaling.active),
     integerLastMileScaling(rtData->config.integerScaling.lastMileScaling),
-    hdUpscaleActive(rtData->config.hdUpscale), hdFailCount(0), hdLogged(false) {
+    hdUpscaleActive(rtData->config.hdUpscale), hdSharpFinal(rtData->config.hdSharpFinal),
+    hdFailCount(0), hdLogged(false) {
         avgFPSData = std::vector<unsigned long long>();
         avgFPSLock = SDL_CreateMutex();
         glResourceLock = SDL_CreateMutex();
@@ -1141,15 +1143,18 @@ struct GraphicsPrivate {
         //GLMeta::blitSource(screen.getPP().frontBuffer());
         
         Vec2i sourceSize;
+        TEXFBO *finalSource = &screen.getPP().frontBuffer();
         
         if (hdReady)
         {
             GLMeta::blitSource(hdUpscaleBuffer);
+            finalSource = &hdUpscaleBuffer;
             sourceSize = Vec2i(hdUpscaleBuffer.width, hdUpscaleBuffer.height);
         }
         else if (integerScaleActive)
         {
             GLMeta::blitSource(integerScaleBuffer);
+            finalSource = &integerScaleBuffer;
             sourceSize = Vec2i(integerScaleBuffer.width, integerScaleBuffer.height);
         }
         else
@@ -1160,7 +1165,23 @@ struct GraphicsPrivate {
         
         FBO::clear();
 
-        metaBlitBufferFlippedScaled(sourceSize);
+        /* The canvas is 853x480 and the window is whatever the device
+         * reports, so this blit is almost never an integer scale factor.
+         * Nearest then gives neighbouring source pixels different screen
+         * widths, which reads as jitter along every edge; sharp-bilinear
+         * keeps the edges crisp while advancing evenly. Falls back to the
+         * original blit when the shader is unavailable. */
+        bool sharpDone = false;
+
+        if (hdSharpFinal)
+            sharpDone = GLMeta::blitRectangleSharpBilinear(
+                            *finalSource,
+                            IntRect(0, 0, sourceSize.x, sourceSize.y),
+                            IntRect(scOffset.x, scSize.y + scOffset.y, scSize.x, -scSize.y),
+                            winSize);
+
+        if (!sharpDone)
+            metaBlitBufferFlippedScaled(sourceSize);
         
         GLMeta::blitEnd();
         

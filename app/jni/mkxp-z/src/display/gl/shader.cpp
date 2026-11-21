@@ -41,6 +41,7 @@
 #include "flatColor.frag.xxd"
 #include "simple.frag.xxd"
 #include "mmpx.frag.xxd"
+#include "sharpbilinear.frag.xxd"
 #include "simpleColor.frag.xxd"
 #include "simpleAlpha.frag.xxd"
 #include "simpleAlphaUni.frag.xxd"
@@ -369,10 +370,45 @@ void MMPXShader::setSourceSize(const Vec2i &value)
 	gl.Uniform2f(u_texSize, (float)value.x, (float)value.y);
 }
 
+
+SharpBilinearShader::SharpBilinearShader() : m_valid(false)
+{
+	try
+	{
+		INIT_SHADER(simple, sharpbilinear, SharpBilinearShader);
+		ShaderBase::init();
+		GET_U(texSize);
+		GET_U(destSize);
+		m_valid = (u_texSize >= 0 && u_destSize >= 0);
+
+		SDL_Log("TJHD: sharpbilinear compiled, texSize=%d destSize=%d",
+		        (int)u_texSize, (int)u_destSize);
+	}
+	catch (const Exception &e)
+	{
+		std::cerr << "Sharp-bilinear shader unavailable: " << e.msg << std::endl;
+		SDL_Log("TJHD: sharpbilinear compile failed: %s", e.msg.c_str());
+	}
+}
+
+void SharpBilinearShader::setSourceSize(const Vec2i &value)
+{
+	gl.Uniform2f(u_texSize, (float)value.x, (float)value.y);
+}
+
+void SharpBilinearShader::setDestSize(const Vec2i &value)
+{
+	gl.Uniform2f(u_destSize, (float)value.x, (float)value.y);
+}
+
 #else
 
 MMPXShader::MMPXShader() : m_valid(false) {}
 void MMPXShader::setSourceSize(const Vec2i &) {}
+
+SharpBilinearShader::SharpBilinearShader() : m_valid(false) {}
+void SharpBilinearShader::setSourceSize(const Vec2i &) {}
+void SharpBilinearShader::setDestSize(const Vec2i &) {}
 
 #endif
 

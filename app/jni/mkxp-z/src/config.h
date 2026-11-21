@@ -68,6 +68,12 @@ struct Config {
      * of integerScaling: the intermediate buffer is always exactly 2x the
      * canvas, so it works on any screen resolution. */
     bool hdUpscale;
+
+    /* Use the sharp-bilinear shader for the final canvas -> window blit
+     * instead of plain nearest. Nearest only reads correctly at integer
+     * scale factors; a 853x480 canvas on a 1080p screen is 2.74x, where it
+     * makes neighbouring pixels different widths and every edge jitters. */
+    bool hdSharpFinal;
     
     std::string gameFolder;
     bool manualFolderSelect;

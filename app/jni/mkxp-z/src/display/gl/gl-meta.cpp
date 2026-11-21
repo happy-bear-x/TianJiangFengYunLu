@@ -272,10 +272,55 @@ bool blitRectangleMMPX(TEXFBO &source, const IntRect &src, const IntRect &dst)
 	return true;
 }
 
+bool blitRectangleSharpBilinear(TEXFBO &source, const IntRect &src,
+                                const IntRect &dst, const Vec2i &viewport)
+{
+	SharpBilinearShader &shader = shState->shaders().sharpBilinear;
+
+	if (!shader.valid())
+	{
+		static bool logged = false;
+		if (!logged) { logged = true; TJHD_LOG("sharpbilinear unavailable: shader invalid"); }
+		return false;
+	}
+
+	int dstW = dst.w < 0 ? -dst.w : dst.w;
+	int dstH = dst.h < 0 ? -dst.h : dst.h;
+
+	if (dstW == 0 || dstH == 0)
+		return false;
+
+	glState.blend.pushSet(false);
+
+	shader.bind();
+
+	/* blitBeginScreen() leaves the viewport alone on the native path (it
+	 * copies pixels there instead of sampling), so this path has to set it
+	 * from the window size before applyViewportProj() reads it back. */
+	glState.viewport.pushSet(IntRect(0, 0, viewport.x, viewport.y));
+	shader.applyViewportProj();
+
+	TEX::bind(source.tex);
+
+	shader.setTranslation(Vec2i());
+	shader.setTexSize(Vec2i(src.w, src.h));
+	shader.setSourceSize(Vec2i(src.w, src.h));
+	shader.setDestSize(Vec2i(dstW, dstH));
+
+	Quad &quad = shState->gpQuad();
+	quad.setTexPosRect(src, dst);
+	quad.draw();
+
+	glState.viewport.pop();
+
+	glState.blend.pop();
+
+	return true;
+}
+
 void blitEnd()
 {
 	if (!HAVE_NATIVE_BLIT)
 		glState.viewport.pop();
 }
-
 }

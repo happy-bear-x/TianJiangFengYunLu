@@ -82,6 +82,17 @@ void blitRectangle(const IntRect &src, const IntRect &dst,
  * see it. */
 bool blitRectangleMMPX(TEXFBO &source, const IntRect &src, const IntRect &dst);
 
+/* Sharp-bilinear blit, for the final canvas -> window step. Unlike plain
+ * nearest it stays even at non-integer scale factors (853x480 canvas on a
+ * 2340x1080 screen is 2.74x). Returns false when the shader is
+ * unavailable or the destination is degenerate, so the caller can fall
+ * back to blitRectangle().
+ *
+ * 'viewport' is the current window size: the native-blit path leaves the
+ * GL viewport untouched, and this shader derives its projection from it. */
+bool blitRectangleSharpBilinear(TEXFBO &source, const IntRect &src,
+                                const IntRect &dst, const Vec2i &viewport);
+
 void blitEnd();
 
 }
