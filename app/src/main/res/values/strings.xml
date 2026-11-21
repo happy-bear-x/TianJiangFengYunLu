@@ -3,4 +3,8 @@
     <string name="app_name">天降风云录</string>
     <string name="boot_loading">正在载入江湖…</string>
     <string name="boot_hint">首次启动需要解包约 60MB 游戏资源，请稍候</string>
+    <string name="save_share_title">共用存档</string>
+    <string name="save_share_message">「天降风云录」和「天降风云录 HD」可以共用同一份存档，需要在 Documents/天降风云录 下建一个公共存档目录。\n\n授予「所有文件访问」权限后，两版进度自动互通；不授权也能正常游戏，只是存档各自独立。</string>
+    <string name="save_share_grant">去授权</string>
+    <string name="save_share_skip">暂不共用</string>
 </resources>
