@@ -238,7 +238,19 @@ bool blitRectangleMMPX(const IntRect &src, const IntRect &dst)
 	glState.blend.pushSet(false);
 
 	shader.bind();
+
+	/* _blitBegin() only pushes a viewport on the non-native path: the native
+	 * one copies pixels with glBlitFramebuffer and never samples, so it has
+	 * no use for one. MMPX does sample, and applyViewportProj() derives its
+	 * ortho matrix from glState.viewport -- without this push it used the
+	 * *window* size (1280x720 instead of 1706x960), projected most of the 2x
+	 * quad outside the buffer and left the remainder uninitialised. That is
+	 * the white-block symptom this fixes.
+	 * blitEnd() does not pop on the native path either, so push/pop here
+	 * stays balanced. */
+	glState.viewport.pushSet(IntRect(0, 0, dst.w, dst.h));
 	shader.applyViewportProj();
+
 	shader.setTranslation(Vec2i());
 	shader.setTexSize(Vec2i(src.w, src.h));
 	shader.setSourceSize(Vec2i(src.w, src.h));
@@ -246,6 +258,8 @@ bool blitRectangleMMPX(const IntRect &src, const IntRect &dst)
 	Quad &quad = shState->gpQuad();
 	quad.setTexPosRect(src, dst);
 	quad.draw();
+
+	glState.viewport.pop();
 
 	glState.blend.pop();
 
