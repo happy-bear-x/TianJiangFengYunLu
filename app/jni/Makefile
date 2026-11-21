@@ -200,7 +200,7 @@ $(LIBDIR)/libruby.so.3.1.0: ruby/Makefile
 	cd ruby; make -j$(NPROC)
 	# rbinstall 默认会把 rubygems 规范文件装到宿主 /var/lib/gems（CI 用户无权写），
 	# 而本构建用 --disable-rubygems，default-gems 只是规范文件，跳过不影响运行时。
-	cd ruby; make install SCRIPT_ARGS="--exclude=default-gems"
+	cd ruby; make install INSTRUBY_OPTS="--exclude=default-gems"
 
 ruby/Makefile: ruby/configure
 	cd ruby; DLDFLAGS="-Wl,-soname,libruby.so" \
