@@ -1070,7 +1070,22 @@ struct GraphicsPrivate {
          * compiled on this device. */
         bool hdReady = false;
 
-        if (hdUpscaleActive)
+        /* MMPX is a fixed 2x operator. When the window cannot hold twice the
+         * canvas the 2x result has to be scaled back down, and that loses
+         * more detail than the sharpening recovers -- measured -6% gradient
+         * energy at 1280x720 vs not running it at all. Only worth paying
+         * for when the screen actually has the pixels. */
+        bool hdWorthwhile = hdUpscaleActive &&
+                            winSize.x >= scRes.x * 2 && winSize.y >= scRes.y * 2;
+
+        if (hdUpscaleActive && !hdWorthwhile && !hdLogged)
+        {
+            hdLogged = true;
+            TJHD_LOG("mmpx skipped: window %dx%d cannot hold %dx%d",
+                     winSize.x, winSize.y, scRes.x * 2, scRes.y * 2);
+        }
+
+        if (hdWorthwhile)
         {
             /* Self-heal: anything that changes scRes without going through
              * resizeScreen() would leave the fixed-2x buffer stale, and
