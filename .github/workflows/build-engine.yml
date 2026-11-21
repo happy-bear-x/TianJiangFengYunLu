@@ -88,20 +88,37 @@ jobs:
       - name: Build third-party libraries (arm64-v8a)
         working-directory: app/jni
         run: |
+          set -o pipefail
+          mkdir -p /tmp/engine-logs
           HOST=aarch64-linux-android \
           TARGET=aarch64-linux-android \
           ABI=arm64-v8a \
-          make -j$(nproc)
+          make -j$(nproc) 2>&1 | tee /tmp/engine-logs/deps.log
 
       - name: Build libmkxp-z.so
         working-directory: app/jni
         run: |
+          set -o pipefail
           "$ANDROID_NDK_HOME/ndk-build" \
             NDK_PROJECT_PATH=. \
             APP_BUILD_SCRIPT=Android.mk \
             NDK_APPLICATION_MK=Application.mk \
             APP_ABI=arm64-v8a \
-            -j$(nproc)
+            -j$(nproc) 2>&1 | tee /tmp/engine-logs/mkxp.log
+
+      # 失败时也要能看到日志：actions 日志接口需要管理员权限，
+      # 本地只能 git fetch，所以把日志一起推到 engine/prebuilt 分支
+      - name: Publish logs on failure
+        if: failure()
+        run: |
+          git config user.name  "engine-ci"
+          git config user.email "engine-ci@users.noreply.github.com"
+          git checkout -B engine/prebuilt
+          mkdir -p prebuilt/logs
+          cp -r /tmp/engine-logs/. prebuilt/logs/ 2>/dev/null || true
+          git add -f prebuilt/logs/ || true
+          git commit -m "CI: build logs from ${GITHUB_SHA}" || true
+          git push origin engine/prebuilt || true
 
       - name: Show build output
         working-directory: app/jni
