@@ -95,16 +95,25 @@ if defined?(Window)
   end
 end
 
-# Only 640x480 bitmaps are full-screen artwork. Character chips, icons and
-# tilesets never match, so they are left untouched.
+# Only full-screen artwork matches. 640x480 and its integer multiples
+# (1280x960 for the HD asset set) both qualify; character chips, icons,
+# tilesets and animation strips never do, so they are left untouched.
+#
+# The canvas is widened to the panel (Hor+), so full-screen art keeps the
+# original behaviour of being stretched across the canvas width. With HD
+# assets the same visual result is reached by scaling the 2x texture down,
+# which maps it 1:1 onto physical pixels instead of upscaling a 640px bitmap.
 if defined?(Sprite)
   class Sprite
     alias_method :__tj_bmp_set, :bitmap=
     def bitmap=(bmp)
       __tj_bmp_set(bmp)
       return if bmp.nil?
-      if bmp.width == $tj_orig_w && bmp.height == $tj_orig_h
+      if (bmp.width % $tj_orig_w).zero? && (bmp.height % $tj_orig_h).zero? &&
+         bmp.width / $tj_orig_w == bmp.height / $tj_orig_h
+        factor = bmp.width / $tj_orig_w
         self.zoom_x = $tj_canvas_w.to_f / bmp.width
+        self.zoom_y = 1.0 / factor
       end
     rescue Exception
       # a failed scale must never break the caller

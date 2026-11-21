@@ -114,3 +114,100 @@ OpenCV 5.0 的新 dnn 引擎解析 FSRCNN/EDSR 的 `DepthToSpace` 层会失败�
 
 引擎 CI：push 到 `engine/build` 分支触发，约 6 分钟，产物落在 `engine/prebuilt` 分支的
 `prebuilt/arm64-v8a/`。
+
+---
+
+# 素材 2 倍超分（2026-11-21）
+
+## 一、不需要改引擎
+
+原先判断"素材 2x 必须配套引擎位图倍率，工作量 1~2 周"。实测推翻了这个结论：
+本作所有全屏大图都是**单个 Sprite**，只要给 Sprite 一个缩放系数，2 倍纹理就能
+1:1 映射到屏幕物理像素。
+
+算式（1080p、16:9）：
+
+```
+逻辑画布 853×480  →  渲染 1706×960  →  屏幕 1920×1080
+Sprite zoom = 853/1280 = 0.667
+屏幕物理宽 = 1280 × 0.667 × (1706/853) = 1706 ≈ 1:1 纹理像素
+```
+
+## 二、改一处全局补丁就够
+
+`mkxp_compat.rb` 原本就有一个 Sprite 补丁：位图恰好 640×480 时按画布宽度横向拉伸。
+现在把它放宽到**整数倍分辨率**：
+
+```ruby
+if (bmp.width % $tj_orig_w).zero? && (bmp.height % $tj_orig_h).zero? &&
+   bmp.width / $tj_orig_w == bmp.height / $tj_orig_h
+  factor = bmp.width / $tj_orig_w
+  self.zoom_x = $tj_canvas_w.to_f / bmp.width
+  self.zoom_y = 1.0 / factor
+end
+```
+
+640×480 → factor 1，zoom 1.333/1（原行为不变）
+1280×960 → factor 2，zoom 0.667/0.5（显示结果与 1x 完全一致，只是纹理更清晰）
+
+整除判断保证 960×576 的战斗动画帧、256×9100 的图块集、128 宽的行走图都不会误匹配。
+
+## 三、处理范围
+
+| 目录 | 张数 | 处理 |
+|---|---|---|
+| `Pictures/Endflash`（结局动画） | 180 | AI 2x |
+| `Pictures/KC`（开场动画） | 182 | AI 2x |
+| `Pictures/TrueEnd` | 10 | AI 2x |
+| `Titles` / `Battlebacks` / `Gameovers` | 3 | AI 2x |
+| `Panoramas` / `Fogs` | 8 | **不动**（平铺无缝，超分会破接缝） |
+| `Tilesets` / `Characters` / `Battlers` / `Animations` / `Icons` / `Windowskins` | 590 | **不动**（像素风） |
+| `Transitions` | 20 | **不动**（纯遮罩） |
+
+`Spriteset_Battle` 里 `src_rect.set(0,0,640,480)` 是写死的，换 2x 后只取左上四分之一，
+已改为跟随 `bitmap.width/height`（`tools/install_hd_fullscreen.py`）。
+
+## 四、像素风不能 AI 超分（实测）
+
+同一张行走图：AI 2x 之后眼睛、五官、衣物褶皱全部糊成一团，像素画的硬边被抹成渐变，
+**像素感彻底消失**。所以地图、人物、图标一律保持原样。
+
+而且像素素材放大本就没有收益：源信息量不变，GPU 按逻辑尺寸采样，最近邻 2x 与直接放大等价。
+地图想提升是另一条路——需要像素专用放大算法（xBR / Scale2x 类）在 shader 里做，
+属于单独工程。
+
+## 五、显示方式
+
+宽屏下有三种选择，实测对比后定版为**保持原版拉伸**：
+
+| 方式 | 效果 | 结论 |
+|---|---|---|
+| 横向拉伸铺满 | 构图与旧版完全一致，人物横向略胖 | **采用**（零改动风险） |
+| 等比居中+黑边 | 不变形，左右各留 106px 黑边 | 画面利用率低 |
+| 等比铺满+裁上下 | 不变形无黑边，但上下各裁约 1/6 | 改构图，裁切有风险 |
+
+## 六、体积与性能
+
+- 素材：40 MB → 77.5 MB（q92 / 4:4:4 的 JPEG；无损 PNG 会是 247 MB）
+- `game.zip`：73 MB → 110 MB，APK：137 MB
+- 超分速度：375 张 29 秒（RX 7600 XT / Vulkan，`realesr-animevideov3-x2`）
+- 首次启动解压时间相应变长，之后有 `.ready` 标记跳过
+
+## 七、已知问题
+
+**开场动画每只翼龙下都吊着主角。** 核实为**原作美术如此**，不是超分造假：
+从 git 取出原始 `40.jpg`，3 只龙各挂 1 个主角，AI 版数量位置完全一致。
+原版 640×480 时那个主角只有约 30 像素，糊成白点所以看不出来。
+
+自动修正不可行，已实测：模板匹配（主角每帧形变）、ORB 特征（区域太小提不出特征）、
+颜色+橙色上下文（白衣与云、高光混淆）三种定位方式全部失败；定位后无论用
+`cv2.inpaint` 的 TELEA 还是 NS，都因为主角压在"深红翅膀／橙色龙身／蓝天"三色交界处
+而留下明显糊块。真要修只能人工逐帧处理 180 帧。
+
+## 八、相关工具
+
+| 文件 | 用途 |
+|---|---|
+| `tools/install_hd_fullscreen.py` | 修 `Spriteset_Battle` 写死的 `src_rect` |
+| `_build/hd/resrgan/` | realesrgan-ncnn-vulkan 可执行文件与模型（未入库） |
+| `docs/hd-verify/` | 显示方式对比、像素风对比、翼龙原图对比 |
