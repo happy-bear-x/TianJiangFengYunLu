@@ -64,6 +64,14 @@
 #include <cmath>
 
 
+/* HD upscale diagnostics.
+ *
+ * std::clog / std::cerr are silently dropped on Android because nothing
+ * forwards the C++ streams to logcat, which is why an earlier attempt to
+ * debug the MMPX path saw no output at all. SDL_Log does reach logcat
+ * (tag "SDL/APP"), so every HD-path diagnostic goes through here. */
+#define TJHD_LOG(...) SDL_Log("TJHD: " __VA_ARGS__)
+
 #define DEF_SCREEN_W (rgssVer == 1 ? 640 : 544)
 #define DEF_SCREEN_H (rgssVer == 1 ? 480 : 416)
 
@@ -818,6 +826,8 @@ struct GraphicsPrivate {
     /* MMPX path: canvas -> hdUpscaleBuffer (2x) -> window */
     TEXFBO hdUpscaleBuffer;
     bool hdUpscaleActive;
+    int hdFailCount;
+    bool hdLogged;
     
     std::vector<unsigned long long> avgFPSData;
     unsigned long long last_avg_update;
@@ -840,11 +850,18 @@ struct GraphicsPrivate {
     last_update(0), last_avg_update(0), backingScaleFactor(1), integerScaleFactor(0, 0),
     integerScaleActive(rtData->config.integerScaling.active),
     integerLastMileScaling(rtData->config.integerScaling.lastMileScaling),
-    hdUpscaleActive(rtData->config.hdUpscale) {
+    hdUpscaleActive(rtData->config.hdUpscale), hdFailCount(0), hdLogged(false) {
         avgFPSData = std::vector<unsigned long long>();
         avgFPSLock = SDL_CreateMutex();
         glResourceLock = SDL_CreateMutex();
         
+        recalculateScreenSize(rtData->config.fixedAspectRatio);
+        updateScreenResoRatio(rtData);
+
+        TJHD_LOG("graphics init: hdUpscale=%d canvas=%dx%d win=%dx%d defScreen=%dx%d rgss=%d",
+                 (int)hdUpscaleActive, scRes.x, scRes.y, winSize.x, winSize.y,
+                 rtData->config.defScreenW, rtData->config.defScreenH, rgssVer);
+
         if (integerScaleActive) {
             integerScaleFactor = Vec2i(0, 0);
             rebuildIntegerScaleBuffer();
@@ -854,8 +871,6 @@ struct GraphicsPrivate {
             rebuildHDUpscaleBuffer();
         }
         
-        recalculateScreenSize(rtData->config.fixedAspectRatio);
-        updateScreenResoRatio(rtData);
         
         TEXFBO::init(frozenScene);
         TEXFBO::allocEmpty(frozenScene, scRes.x, scRes.y);
@@ -957,6 +972,10 @@ struct GraphicsPrivate {
         TEXFBO::init(hdUpscaleBuffer);
         TEXFBO::allocEmpty(hdUpscaleBuffer, scRes.x * 2, scRes.y * 2);
         TEXFBO::linkFBO(hdUpscaleBuffer);
+
+        TJHD_LOG("hd buffer rebuilt: canvas %dx%d -> %dx%d",
+                 scRes.x, scRes.y,
+                 hdUpscaleBuffer.width, hdUpscaleBuffer.height);
     }
     
     bool integerScaleStepApplicable() const
@@ -1051,6 +1070,14 @@ struct GraphicsPrivate {
 
         if (hdUpscaleActive)
         {
+            /* Self-heal: anything that changes scRes without going through
+             * resizeScreen() would leave the fixed-2x buffer stale, and
+             * blitRectangleMMPX would reject every frame from then on
+             * (silent fallback, which is exactly the bug this guards). */
+            if (hdUpscaleBuffer.width != scRes.x * 2 ||
+                hdUpscaleBuffer.height != scRes.y * 2)
+                rebuildHDUpscaleBuffer();
+
             GLMeta::blitBegin(hdUpscaleBuffer);
             GLMeta::blitSource(screen.getPP().frontBuffer());
 
@@ -1059,6 +1086,25 @@ struct GraphicsPrivate {
                         IntRect(0, 0, hdUpscaleBuffer.width, hdUpscaleBuffer.height));
 
             GLMeta::blitEnd();
+
+            if (!hdReady)
+            {
+                /* Three consecutive failures mean the driver will never
+                 * accept this pass; stop paying for it every frame. */
+                if (++hdFailCount >= 3)
+                {
+                    hdUpscaleActive = false;
+                    TJHD_LOG("mmpx disabled after %d failed frames", hdFailCount);
+                }
+            }
+            else if (!hdLogged)
+            {
+                hdLogged = true;
+                TJHD_LOG("mmpx pass running: canvas %dx%d -> %dx%d, window %dx%d",
+                         scRes.x, scRes.y,
+                         hdUpscaleBuffer.width, hdUpscaleBuffer.height,
+                         winSize.x, winSize.y);
+            }
         }
 
         // maybe unspaghetti this later

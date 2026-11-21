@@ -26,6 +26,11 @@
 #include "quad.h"
 #include "shader.h"
 
+#include <SDL_log.h>
+
+/* std::clog never reaches logcat on Android; SDL_Log does. */
+#define TJHD_LOG(...) SDL_Log("TJHD: " __VA_ARGS__)
+
 namespace GLMeta
 {
 
@@ -210,12 +215,25 @@ bool blitRectangleMMPX(const IntRect &src, const IntRect &dst)
 	MMPXShader &shader = shState->shaders().mmpx;
 
 	if (!shader.valid())
+	{
+		static bool logged = false;
+		if (!logged) { logged = true; TJHD_LOG("mmpx unavailable: shader invalid"); }
 		return false;
+	}
 
 	/* MMPX maps every source texel onto a 2x2 block; anything else
 	 * would sample the wrong neighbours. */
 	if (dst.w != src.w * 2 || dst.h != src.h * 2)
+	{
+		static bool logged = false;
+		if (!logged)
+		{
+			logged = true;
+			TJHD_LOG("mmpx rejected: src %dx%d dst %dx%d (needs dst = 2x src)",
+			         src.w, src.h, dst.w, dst.h);
+		}
 		return false;
+	}
 
 	glState.blend.pushSet(false);
 

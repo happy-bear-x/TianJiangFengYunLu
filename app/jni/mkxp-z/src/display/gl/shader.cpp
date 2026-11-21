@@ -27,6 +27,7 @@
 #include <assert.h>
 #include <string.h>
 #include <iostream>
+#include <SDL_log.h>
 
 #ifndef MKXPZ_BUILD_XCODE
 #include "common.h.xxd"
@@ -80,24 +81,27 @@ std::string Shader::shaderCommon = "";
 
 static void printShaderLog(GLuint shader)
 {
-	GLint logLength;
+	GLint logLength = 0;
 	gl.GetShaderiv(shader, GL_INFO_LOG_LENGTH, &logLength);
 
-	std::string log(logLength, '\0');
+	std::string log(logLength > 0 ? logLength : 1, '\0');
 	gl.GetShaderInfoLog(shader, log.size(), 0, &log[0]);
 
 	std::clog << "Shader log:\n" << log;
+	/* logcat is the only channel that survives on Android */
+	SDL_Log("TJHD: Shader log: %s", log.c_str());
 }
 
 static void printProgramLog(GLuint program)
 {
-	GLint logLength;
+	GLint logLength = 0;
 	gl.GetProgramiv(program, GL_INFO_LOG_LENGTH, &logLength);
 
-	std::string log(logLength, '\0');
+	std::string log(logLength > 0 ? logLength : 1, '\0');
 	gl.GetProgramInfoLog(program, log.size(), 0, &log[0]);
 
 	std::clog << "Program log:\n" << log;
+	SDL_Log("TJHD: Program log: %s", log.c_str());
 }
 
 Shader::Shader()
@@ -347,6 +351,8 @@ MMPXShader::MMPXShader() : m_valid(false)
 		ShaderBase::init();
 		GET_U(texSize);
 		m_valid = true;
+
+		SDL_Log("TJHD: mmpx shader compiled, texSize uniform=%d", (int)u_texSize);
 	}
 	catch (const Exception &e)
 	{
@@ -354,6 +360,7 @@ MMPXShader::MMPXShader() : m_valid(false)
 		 * highp, for instance). Leave the object invalid; redrawScreen
 		 * falls back to the regular blit. */
 		std::cerr << "MMPX shader unavailable: " << e.msg << std::endl;
+		SDL_Log("TJHD: mmpx compile failed: %s", e.msg.c_str());
 	}
 }
 
