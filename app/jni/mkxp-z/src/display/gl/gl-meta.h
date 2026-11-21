@@ -74,8 +74,13 @@ void blitRectangle(const IntRect &src, const IntRect &dst,
 
 /* MMPX 2x upscale. The destination rect must be exactly twice the source
  * rect in both axes. Returns false when the MMPX shader is not available,
- * in which case the caller should fall back to blitRectangle(). */
-bool blitRectangleMMPX(const IntRect &src, const IntRect &dst);
+ * in which case the caller should fall back to blitRectangle().
+ *
+ * 'source' must be passed explicitly: unlike blitRectangle(), this is a
+ * sampling operation, and blitSource() only records a READ framebuffer on
+ * the native-blit path, so it never puts the texture where a sampler can
+ * see it. */
+bool blitRectangleMMPX(TEXFBO &source, const IntRect &src, const IntRect &dst);
 
 void blitEnd();
 

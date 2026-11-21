@@ -1078,10 +1078,13 @@ struct GraphicsPrivate {
                 hdUpscaleBuffer.height != scRes.y * 2)
                 rebuildHDUpscaleBuffer();
 
+            TEXFBO &hdSource = screen.getPP().frontBuffer();
+
             GLMeta::blitBegin(hdUpscaleBuffer);
-            GLMeta::blitSource(screen.getPP().frontBuffer());
+            GLMeta::blitSource(hdSource);
 
             hdReady = GLMeta::blitRectangleMMPX(
+                        hdSource,
                         IntRect(0, 0, scRes.x, scRes.y),
                         IntRect(0, 0, hdUpscaleBuffer.width, hdUpscaleBuffer.height));
 

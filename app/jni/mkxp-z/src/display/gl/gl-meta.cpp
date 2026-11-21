@@ -210,7 +210,7 @@ void blitRectangle(const IntRect &src, const IntRect &dst, bool smooth)
 	}
 }
 
-bool blitRectangleMMPX(const IntRect &src, const IntRect &dst)
+bool blitRectangleMMPX(TEXFBO &source, const IntRect &src, const IntRect &dst)
 {
 	MMPXShader &shader = shState->shaders().mmpx;
 
@@ -250,6 +250,12 @@ bool blitRectangleMMPX(const IntRect &src, const IntRect &dst)
 	 * stays balanced. */
 	glState.viewport.pushSet(IntRect(0, 0, dst.w, dst.h));
 	shader.applyViewportProj();
+
+	/* blitSource() only records a READ framebuffer when native blit is
+	 * available, which is enough for a pixel copy but leaves nothing for a
+	 * sampler to read: unit 0 would still hold whatever texture the last
+	 * draw left there (white, in practice -- hence the blank screen). */
+	TEX::bind(source.tex);
 
 	shader.setTranslation(Vec2i());
 	shader.setTexSize(Vec2i(src.w, src.h));
