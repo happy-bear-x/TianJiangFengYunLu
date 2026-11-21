@@ -6,6 +6,9 @@ on:
       - 'engine/build'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build engine shared library
@@ -112,3 +115,19 @@ jobs:
           name: mkxp-z-libs-arm64
           path: app/jni/libs/arm64-v8a/*.so
           retention-days: 30
+
+      # 产物回传到独立分支：本地只能走 SSH，拿不到 actions artifact，
+      # 但 git fetch 能直接从仓库取回编译好的 .so
+      - name: Publish shared libraries to engine/prebuilt
+        run: |
+          set -e
+          mkdir -p /tmp/engine-libs
+          cp app/jni/libs/arm64-v8a/*.so /tmp/engine-libs/
+          git config user.name  "engine-ci"
+          git config user.email "engine-ci@users.noreply.github.com"
+          git checkout -B engine/prebuilt
+          mkdir -p prebuilt/arm64-v8a
+          cp /tmp/engine-libs/*.so prebuilt/arm64-v8a/
+          git add -f prebuilt/
+          git commit -m "CI: prebuilt arm64 libraries from ${GITHUB_SHA}" || true
+          git push --force origin engine/prebuilt
