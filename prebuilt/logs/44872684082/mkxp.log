@@ -1,0 +1,3 @@
+Android NDK: ERROR:SDL2_sound/Android.mk:openal: LOCAL_SRC_FILES points to a missing file    
+Android NDK: Check that ./openal/./build-arm64-v8a/lib/libopenal.so exists  or that its path is correct   
+/usr/local/lib/android/sdk/ndk/23.2.8568313/build/core/prebuilt-library.mk:45: *** Android NDK: Aborting    .  Stop.

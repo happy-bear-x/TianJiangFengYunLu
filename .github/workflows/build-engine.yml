@@ -95,6 +95,18 @@ jobs:
           ABI=arm64-v8a \
           make -j$(nproc) 2>&1 | tee /tmp/engine-logs/deps.log
 
+      - name: Inspect prebuilt artifacts
+        working-directory: app/jni
+        run: |
+          mkdir -p /tmp/engine-logs
+          echo "=== build-arm64-v8a/lib ===" > /tmp/engine-logs/artifacts.txt
+          ls -la build-arm64-v8a/lib/ >> /tmp/engine-logs/artifacts.txt 2>&1 || true
+          echo "=== 全盘找 libopenal.so ===" >> /tmp/engine-logs/artifacts.txt
+          find . -name "libopenal.so" >> /tmp/engine-logs/artifacts.txt 2>&1 || true
+          echo "=== 全盘找 libruby.so ===" >> /tmp/engine-logs/artifacts.txt
+          find . -name "libruby.so*" >> /tmp/engine-logs/artifacts.txt 2>&1 || true
+          cat /tmp/engine-logs/artifacts.txt
+
       - name: Build libmkxp-z.so
         working-directory: app/jni
         run: |
