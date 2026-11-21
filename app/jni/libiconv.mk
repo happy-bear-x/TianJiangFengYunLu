@@ -1,5 +1,5 @@
-LOCAL_PATH := $(call my-dir)/libiconv
-LOCAL_BUILD_PATH := $(call my-dir)/build-$(TARGET_ARCH_ABI)
+LOCAL_PATH := $(L_PATH)/libiconv
+LOCAL_BUILD_PATH := $(L_PATH)/build-$(TARGET_ARCH_ABI)
 
 include $(CLEAR_VARS)
 

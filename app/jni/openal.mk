@@ -1,5 +1,5 @@
-LOCAL_PATH := $(call my-dir)/openal
-LOCAL_BUILD_PATH := $(call my-dir)/build-$(TARGET_ARCH_ABI)
+LOCAL_PATH := $(L_PATH)/openal
+LOCAL_BUILD_PATH := $(L_PATH)/build-$(TARGET_ARCH_ABI)
 
 include $(CLEAR_VARS)
 
