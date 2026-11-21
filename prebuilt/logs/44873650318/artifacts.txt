@@ -1,0 +1,33 @@
+=== build-arm64-v8a/lib ===
+total 75816
+drwxr-xr-x 6 runner runner     4096 Nov 21 06:06 .
+drwxr-xr-x 6 runner runner     4096 Nov 21 06:05 ..
+drwxr-xr-x 3 runner runner     4096 Nov 21 06:05 cmake
+-rw-r--r-- 1 runner runner     8376 Nov 21 06:04 cpu-features.o
+drwxr-xr-x 2 runner runner     4096 Nov 21 06:05 engines-1.1
+-rw-r--r-- 1 runner runner     3288 Nov 21 06:05 libcharset.a
+-rwxr-xr-x 1 runner runner     1036 Nov 21 06:05 libcharset.la
+-rw-r--r-- 1 runner runner     8604 Nov 21 06:04 libcpufeatures.a
+-rw-r--r-- 1 runner runner  5754930 Nov 21 06:05 libcrypto.a
+-rw-r--r-- 1 runner runner  1093326 Nov 21 06:05 libiconv.a
+-rwxr-xr-x 1 runner runner     1030 Nov 21 06:05 libiconv.la
+-rw-r--r-- 1 runner runner 15805408 Nov 21 06:05 libopenal.so
+-rw-r--r-- 1 runner runner  3049622 Nov 21 06:05 libpixman-1.a
+-rwxr-xr-x 1 runner runner     1086 Nov 21 06:05 libpixman-1.la
+-rw-r--r-- 1 runner runner 30773586 Nov 21 06:05 libruby-static.a
+lrwxrwxrwx 1 runner runner       16 Nov 21 06:06 libruby.so -> libruby.so.3.1.0
+lrwxrwxrwx 1 runner runner       16 Nov 21 06:06 libruby.so.3.1 -> libruby.so.3.1.0
+-rwxr-xr-x 1 runner runner 19937168 Nov 21 06:06 libruby.so.3.1.0
+-rw-r--r-- 1 runner runner  1139802 Nov 21 06:05 libssl.a
+drwxr-xr-x 2 runner runner     4096 Nov 21 06:06 pkgconfig
+drwxr-xr-x 5 runner runner     4096 Nov 21 06:06 ruby
+=== 全盘找 libopenal.so ===
+./build-arm64-v8a/lib/libopenal.so
+./openal/cmakebuild/libopenal.so
+=== 全盘找 libruby.so ===
+./ruby/libruby.so
+./ruby/libruby.so.3.1.0
+./ruby/libruby.so.3.1
+./build-arm64-v8a/lib/libruby.so
+./build-arm64-v8a/lib/libruby.so.3.1.0
+./build-arm64-v8a/lib/libruby.so.3.1
