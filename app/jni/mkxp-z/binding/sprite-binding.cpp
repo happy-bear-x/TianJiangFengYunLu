@@ -57,10 +57,10 @@ DEF_GFX_PROP_OBJ_VAL(Sprite, Rect, SrcRect, "src_rect")
 DEF_GFX_PROP_OBJ_VAL(Sprite, Color, Color, "color")
 DEF_GFX_PROP_OBJ_VAL(Sprite, Tone, Tone, "tone")
 
-DEF_GFX_PROP_I(Sprite, X)
-DEF_GFX_PROP_I(Sprite, Y)
-DEF_GFX_PROP_I(Sprite, OX)
-DEF_GFX_PROP_I(Sprite, OY)
+DEF_GFX_PROP_SCALED_I(Sprite, X)
+DEF_GFX_PROP_SCALED_I(Sprite, Y)
+DEF_GFX_PROP_SCALED_I(Sprite, OX)
+DEF_GFX_PROP_SCALED_I(Sprite, OY)
 DEF_GFX_PROP_I(Sprite, BushDepth)
 DEF_GFX_PROP_I(Sprite, BushOpacity)
 DEF_GFX_PROP_I(Sprite, Opacity)
@@ -92,6 +92,7 @@ RB_METHOD(spriteWidth) {
     int value = 0;
     GUARD_EXC(value = s->getWidth();)
     
+    /* src_rect is kept in logical pixels, so this needs no conversion */
     return rb_fix_new(value);
 }
 

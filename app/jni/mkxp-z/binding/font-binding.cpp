@@ -148,7 +148,7 @@ template <class C> static void checkDisposed(VALUE) {}
 DEF_PROP_OBJ_VAL(Font, Color, Color, "color")
 DEF_PROP_OBJ_VAL(Font, Color, OutColor, "out_color")
 
-DEF_PROP_I(Font, Size)
+DEF_PROP_SCALED_I(Font, Size)
 
 DEF_PROP_B(Font, Bold)
 DEF_PROP_B(Font, Italic)

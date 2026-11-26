@@ -51,6 +51,19 @@ void bitmapInitProps(Bitmap *b, VALUE self) {
     rb_iv_set(self, "font", fontObj);
 }
 
+
+/* Logical -> physical rect conversion. Ruby always talks in logical pixels
+ * (the 640x480 world), the engine stores everything at tjHdScale times that. */
+static inline IntRect tjS(const Rect *r)
+{
+    if (tjHdScale <= 1)
+        return r->toIntRect();
+    return IntRect(r->x * tjHdScale, r->y * tjHdScale,
+                   r->width * tjHdScale, r->height * tjHdScale);
+}
+
+static inline int tjSOff(int v) { return v * tjHdScale; }
+
 RB_METHOD(bitmapInitialize) {
     Bitmap *b = 0;
     
@@ -63,7 +76,7 @@ RB_METHOD(bitmapInitialize) {
         int width, height;
         rb_get_args(argc, argv, "ii", &width, &height RB_ARG_END);
         
-        GFX_GUARD_EXC(b = new Bitmap(width, height);)
+        GFX_GUARD_EXC(b = new Bitmap(width * tjHdScale, height * tjHdScale);)
     }
     
     setPrivateData(self, b);
@@ -80,7 +93,7 @@ RB_METHOD(bitmapWidth) {
     int value = 0;
     GUARD_EXC(value = b->width(););
     
-    return INT2FIX(value);
+    return INT2FIX(tjHdScale > 1 ? value / tjHdScale : value);
 }
 
 RB_METHOD(bitmapHeight) {
@@ -102,7 +115,8 @@ RB_METHOD(bitmapRect) {
     IntRect rect;
     GUARD_EXC(rect = b->rect(););
     
-    Rect *r = new Rect(rect);
+    Rect *r = new Rect(rect.x / tjHdScale, rect.y / tjHdScale,
+                       rect.w / tjHdScale, rect.h / tjHdScale);
     
     return wrapObject(r, RectType);
 }
@@ -124,7 +138,7 @@ RB_METHOD(bitmapBlt) {
     src = getPrivateDataCheck<Bitmap>(srcObj, BitmapType);
     srcRect = getPrivateDataCheck<Rect>(srcRectObj, RectType);
     
-    GFX_GUARD_EXC(b->blt(x, y, *src, srcRect->toIntRect(), opacity););
+    GFX_GUARD_EXC(b->blt(tjSOff(x), tjSOff(y), *src, tjS(srcRect), opacity););
     
     return self;
 }
@@ -147,7 +161,7 @@ RB_METHOD(bitmapStretchBlt) {
     destRect = getPrivateDataCheck<Rect>(destRectObj, RectType);
     srcRect = getPrivateDataCheck<Rect>(srcRectObj, RectType);
     
-    GFX_GUARD_EXC(b->stretchBlt(destRect->toIntRect(), *src, srcRect->toIntRect(),
+    GFX_GUARD_EXC(b->stretchBlt(tjS(destRect), *src, tjS(srcRect),
                             opacity););
     
     return self;
@@ -168,7 +182,7 @@ RB_METHOD(bitmapFillRect) {
         rect = getPrivateDataCheck<Rect>(rectObj, RectType);
         color = getPrivateDataCheck<Color>(colorObj, ColorType);
         
-        GFX_GUARD_EXC(b->fillRect(rect->toIntRect(), color->norm););
+        GFX_GUARD_EXC(b->fillRect(tjS(rect), color->norm););
     } else {
         int x, y, width, height;
         
@@ -177,7 +191,7 @@ RB_METHOD(bitmapFillRect) {
         
         color = getPrivateDataCheck<Color>(colorObj, ColorType);
         
-        GFX_GUARD_EXC(b->fillRect(x, y, width, height, color->norm););
+        GFX_GUARD_EXC(b->fillRect(tjSOff(x), tjSOff(y), tjSOff(width), tjSOff(height), color->norm););
     }
     
     return self;
@@ -201,7 +215,7 @@ RB_METHOD(bitmapGetPixel) {
     rb_get_args(argc, argv, "ii", &x, &y RB_ARG_END);
     
     Color value;
-    GUARD_EXC(value = b->getPixel(x, y););
+    GUARD_EXC(value = b->getPixel(tjSOff(x), tjSOff(y)););
     
     Color *color = new Color(value);
     
@@ -220,7 +234,7 @@ RB_METHOD(bitmapSetPixel) {
     
     color = getPrivateDataCheck<Color>(colorObj, ColorType);
     
-    GFX_GUARD_EXC(b->setPixel(x, y, *color););
+    GFX_GUARD_EXC(b->setPixel(tjSOff(x), tjSOff(y), *color););
     
     return self;
 }
@@ -258,7 +272,7 @@ RB_METHOD(bitmapDrawText) {
         
         rect = getPrivateDataCheck<Rect>(rectObj, RectType);
         
-        GFX_GUARD_EXC(b->drawText(rect->toIntRect(), str, align););
+        GFX_GUARD_EXC(b->drawText(tjS(rect), str, align););
     } else {
         int x, y, width, height;
         
@@ -273,7 +287,8 @@ RB_METHOD(bitmapDrawText) {
                         &align RB_ARG_END);
         }
         
-        GFX_GUARD_EXC(b->drawText(x, y, width, height, str, align););
+        GFX_GUARD_EXC(b->drawText(tjSOff(x), tjSOff(y), tjSOff(width), tjSOff(height),
+                                  str, align););
     }
     
     return self;
@@ -296,7 +311,8 @@ RB_METHOD(bitmapTextSize) {
     IntRect value;
     GUARD_EXC(value = b->textSize(str););
     
-    Rect *rect = new Rect(value);
+    Rect *rect = new Rect(value.x / tjHdScale, value.y / tjHdScale,
+                         value.w / tjHdScale, value.h / tjHdScale);
     
     return wrapObject(rect, RectType);
 }
@@ -321,7 +337,7 @@ RB_METHOD(bitmapGradientFillRect) {
         color1 = getPrivateDataCheck<Color>(color1Obj, ColorType);
         color2 = getPrivateDataCheck<Color>(color2Obj, ColorType);
         
-        GFX_GUARD_EXC(b->gradientFillRect(rect->toIntRect(), color1->norm, color2->norm,
+        GFX_GUARD_EXC(b->gradientFillRect(tjS(rect), color1->norm, color2->norm,
                                       vertical););
     } else {
         int x, y, width, height;
@@ -332,8 +348,8 @@ RB_METHOD(bitmapGradientFillRect) {
         color1 = getPrivateDataCheck<Color>(color1Obj, ColorType);
         color2 = getPrivateDataCheck<Color>(color2Obj, ColorType);
         
-        GFX_GUARD_EXC(b->gradientFillRect(x, y, width, height, color1->norm,
-                                      color2->norm, vertical););
+        GFX_GUARD_EXC(b->gradientFillRect(tjSOff(x), tjSOff(y), tjSOff(width), tjSOff(height),
+                                      color1->norm, color2->norm, vertical););
     }
     
     return self;
@@ -350,13 +366,13 @@ RB_METHOD(bitmapClearRect) {
         
         rect = getPrivateDataCheck<Rect>(rectObj, RectType);
         
-        GFX_GUARD_EXC(b->clearRect(rect->toIntRect()););
+        GFX_GUARD_EXC(b->clearRect(tjS(rect)););
     } else {
         int x, y, width, height;
         
         rb_get_args(argc, argv, "iiii", &x, &y, &width, &height RB_ARG_END);
         
-        GFX_GUARD_EXC(b->clearRect(x, y, width, height););
+        GFX_GUARD_EXC(b->clearRect(tjSOff(x), tjSOff(y), tjSOff(width), tjSOff(height)););
     }
     
     return self;

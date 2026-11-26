@@ -22,6 +22,7 @@
 #include "input.h"
 #include "config.h"
 #include "sharedstate.h"
+#include "graphics.h"
 #include "eventthread.h"
 #include "input/keybindings.h"
 #include "util/exception.h"
@@ -1436,14 +1437,19 @@ int Input::mouseX()
 {
     RGSSThreadData &rtData = shState->rtData();
     
-    return (p->mousePos[0] - rtData.screenOffset.x) * rtData.sizeResoRatio.x;
+    /* Canvas coordinates are physical; RGSS scripts work in logical units */
+    int v = (p->mousePos[0] - rtData.screenOffset.x) * rtData.sizeResoRatio.x;
+    
+    return (tjHdScale > 1) ? v / tjHdScale : v;
 }
 
 int Input::mouseY()
 {
     RGSSThreadData &rtData = shState->rtData();
     
-    return (p->mousePos[1] - rtData.screenOffset.y) * rtData.sizeResoRatio.y;
+    int v = (p->mousePos[1] - rtData.screenOffset.y) * rtData.sizeResoRatio.y;
+    
+    return (tjHdScale > 1) ? v / tjHdScale : v;
 }
 
 int Input::scrollV()

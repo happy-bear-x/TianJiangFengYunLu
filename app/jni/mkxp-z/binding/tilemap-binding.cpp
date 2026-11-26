@@ -152,8 +152,8 @@ DEF_GFX_PROP_OBJ_VAL(Tilemap, Tone, Tone, "tone")
 
 DEF_GFX_PROP_B(Tilemap, Visible)
 
-DEF_GFX_PROP_I(Tilemap, OX)
-DEF_GFX_PROP_I(Tilemap, OY)
+DEF_GFX_PROP_SCALED_I(Tilemap, OX)
+DEF_GFX_PROP_SCALED_I(Tilemap, OY)
 
 DEF_GFX_PROP_I(Tilemap, Opacity)
 DEF_GFX_PROP_I(Tilemap, BlendType)

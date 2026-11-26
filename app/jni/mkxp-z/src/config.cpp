@@ -157,6 +157,8 @@ void Config::read(int argc, char *argv[]) {
         {"integerScalingLastMile", true},
         {"hdUpscale", false},
         {"hdSharpFinal", true},
+        {"hdScale", 1},
+        {"hdFontScale", 0},
         {"maxTextureSize", 0},
         {"gameFolder", ""},
         {"anyAltToggleFS", false},
@@ -272,6 +274,8 @@ try { exp } catch (...) {}
     SET_OPT_CUSTOMKEY(integerScaling.lastMileScaling, integerScalingLastMile, boolean);
     SET_OPT(hdUpscale, boolean);
     SET_OPT(hdSharpFinal, boolean);
+    SET_OPT(hdScale, integer);
+    SET_OPT(hdFontScale, integer);
     SET_OPT(maxTextureSize, integer);
     SET_OPT(anyAltToggleFS, boolean);
     SET_OPT(enableReset, boolean);

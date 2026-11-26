@@ -74,6 +74,18 @@ struct Config {
      * scale factors; a 853x480 canvas on a 1080p screen is 2.74x, where it
      * makes neighbouring pixels different widths and every edge jitters. */
     bool hdSharpFinal;
+
+    /* Global logical -> physical scale factor for the whole 2D layer.
+     * 1 = original behaviour. 2 = every Bitmap is allocated at twice the
+     * logical size, every coordinate handed in from Ruby is doubled on the
+     * way in and halved on the way out, and the canvas is twice as large.
+     * Ruby scripts keep working in 640x480 space and never see the factor. */
+    int hdScale;
+
+    /* Font point size multiplier applied when rasterising glyphs. Normally
+     * equal to hdScale, but kept separate so text can be sharpened
+     * independently while the rest of the layer is still at 1x. */
+    int hdFontScale;
     
     std::string gameFolder;
     bool manualFolderSelect;

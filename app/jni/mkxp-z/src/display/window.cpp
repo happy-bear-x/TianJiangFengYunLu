@@ -22,6 +22,7 @@
 #include "window.h"
 
 #include "viewport.h"
+#include "graphics.h"
 #include "sharedstate.h"
 #include "bitmap.h"
 #include "etc.h"
@@ -48,41 +49,58 @@ struct Corners
 	T tl, tr, bl, br;
 };
 
-static const IntRect backgroundSrc(0, 0, 128, 128);
+/* All of the rects below address the window skin texture. With hdScale > 1
+ * the skin is uploaded at 2x and every rect has to grow with it, otherwise
+ * the frame would sample the top-left quarter of the texture. They therefore
+ * have to be built at runtime instead of being static constants. */
+static IntRect backgroundSrc;
+static IntRect cursorSrc;
+static IntRect pauseAniSrc[4];
+static Sides<IntRect> bordersSrc;
+static Corners<IntRect> cornersSrc;
+static Sides<IntRect> scrollArrowSrc;
 
-static const IntRect cursorSrc(128, 64, 32, 32);
-
-static const IntRect pauseAniSrc[] =
+static void tjInitWindowSrc()
 {
-	IntRect(160, 64, 16, 16),
-	IntRect(176, 64, 16, 16),
-	IntRect(160, 80, 16, 16),
-	IntRect(176, 80, 16, 16)
-};
+	static bool done = false;
 
-static const Sides<IntRect> bordersSrc =
-{
-	IntRect(128, 16, 16, 32),
-	IntRect(176, 16, 16, 32),
-	IntRect(144,  0, 32, 16),
-	IntRect(144, 48, 32, 16)
-};
+	if (done)
+		return;
 
-static const Corners<IntRect> cornersSrc =
-{
-	IntRect(128,  0, 16, 16),
-	IntRect(176,  0, 16, 16),
-	IntRect(128, 48, 16, 16),
-	IntRect(176, 48, 16, 16)
-};
+	done = true;
 
-static const Sides<IntRect> scrollArrowSrc =
-{
-	IntRect(144, 24,  8, 16),
-	IntRect(168, 24,  8, 16),
-	IntRect(152, 16, 16,  8),
-	IntRect(152, 40, 16,  8)
-};
+	int s = (tjHdScale > 1) ? tjHdScale : 1;
+
+#define TJWR(x, y, w, h) IntRect((x)*s, (y)*s, (w)*s, (h)*s)
+
+	backgroundSrc = TJWR(0, 0, 128, 128);
+	cursorSrc     = TJWR(128, 64, 32, 32);
+
+	pauseAniSrc[0] = TJWR(160, 64, 16, 16);
+	pauseAniSrc[1] = TJWR(176, 64, 16, 16);
+	pauseAniSrc[2] = TJWR(160, 80, 16, 16);
+	pauseAniSrc[3] = TJWR(176, 80, 16, 16);
+
+	bordersSrc.l = TJWR(128, 16, 16, 32);
+	bordersSrc.r = TJWR(176, 16, 16, 32);
+	bordersSrc.t = TJWR(144,  0, 32, 16);
+	bordersSrc.b = TJWR(144, 48, 32, 16);
+
+	cornersSrc.tl = TJWR(128,  0, 16, 16);
+	cornersSrc.tr = TJWR(176,  0, 16, 16);
+	cornersSrc.bl = TJWR(128, 48, 16, 16);
+	cornersSrc.br = TJWR(176, 48, 16, 16);
+
+	scrollArrowSrc.l = TJWR(144, 24,  8, 16);
+	scrollArrowSrc.r = TJWR(168, 24,  8, 16);
+	scrollArrowSrc.t = TJWR(152, 16, 16,  8);
+	scrollArrowSrc.b = TJWR(152, 40, 16,  8);
+
+#undef TJWR
+}
+
+/* Window skin border thickness in logical pixels. */
+static inline int tjWsB() { return 16 * ((tjHdScale > 1) ? tjHdScale : 1); }
 
 /* Cycling */
 static const uint8_t cursorAniAlpha[] =
@@ -300,20 +318,24 @@ struct WindowPrivate
 	{
 		int w = size.x;
 		int h = size.y;
+		/* Every constant below is a logical pixel count from the stock
+		 * 128x128 skin layout; with hdScale > 1 both the destination
+		 * geometry and the skin texture grow by the same factor. */
+		int s = (tjHdScale > 1) ? tjHdScale : 1;
 
-		IntRect bgRect(2, 2, w - 4, h - 4);
+		IntRect bgRect(2*s, 2*s, w - 4*s, h - 4*s);
 
 		Sides<IntRect> borderRects;
-		borderRects.l = IntRect(0,    8,    16,   h-16);
-		borderRects.r = IntRect(w-16, 8,    16,   h-16);
-		borderRects.t = IntRect(8,    0,    w-16, 16  );
-		borderRects.b = IntRect(8,    h-16, w-16, 16  );
+		borderRects.l = IntRect(0,       8*s,    16*s,   h-16*s);
+		borderRects.r = IntRect(w-16*s,  8*s,    16*s,   h-16*s);
+		borderRects.t = IntRect(8*s,     0,      w-16*s, 16*s  );
+		borderRects.b = IntRect(8*s,     h-16*s, w-16*s, 16*s  );
 
 		Corners<IntRect> cornerRects;
-		cornerRects.tl = IntRect(0,    0,    16, 16);
-		cornerRects.tr = IntRect(w-16, 0,    16, 16);
-		cornerRects.bl = IntRect(0,    h-16, 16, 16);
-		cornerRects.br = IntRect(w-16, h-16, 16, 16);
+		cornerRects.tl = IntRect(0,      0,      16*s, 16*s);
+		cornerRects.tr = IntRect(w-16*s, 0,      16*s, 16*s);
+		cornerRects.bl = IntRect(0,      h-16*s, 16*s, 16*s);
+		cornerRects.br = IntRect(w-16*s, h-16*s, 16*s, 16*s);
 
 		/* Required quad count */
 		int count = 0;
@@ -323,13 +345,13 @@ struct WindowPrivate
 			backgroundVert.count = 1;
 		else
 			backgroundVert.count =
-			        TileQuads::twoDimCount(128, 128, bgRect.w, bgRect.h);
+			        TileQuads::twoDimCount(128*s, 128*s, bgRect.w, bgRect.h);
 
 		count += backgroundVert.count;
 
 		/* Borders (sides) */
-		count += TileQuads::oneDimCount(32, w-16) * 2;
-		count += TileQuads::oneDimCount(32, h-16) * 2;
+		count += TileQuads::oneDimCount(32*s, w-16*s) * 2;
+		count += TileQuads::oneDimCount(32*s, h-16*s) * 2;
 
 		/* Corners */
 		count += 4;
@@ -354,10 +376,10 @@ struct WindowPrivate
 		}
 
 		/* Borders */
-		i += TileQuads::buildH(bordersSrc.t, w-16, 8,    0,    &vert[i*4]);
-		i += TileQuads::buildH(bordersSrc.b, w-16, 8,    h-16, &vert[i*4]);
-		i += TileQuads::buildV(bordersSrc.l, h-16, 0,    8,    &vert[i*4]);
-		i += TileQuads::buildV(bordersSrc.r, h-16, w-16, 8,    &vert[i*4]);
+		i += TileQuads::buildH(bordersSrc.t, w-16*s, 8*s,   0,      &vert[i*4]);
+		i += TileQuads::buildH(bordersSrc.b, w-16*s, 8*s,   h-16*s, &vert[i*4]);
+		i += TileQuads::buildV(bordersSrc.l, h-16*s, 0,     8*s,    &vert[i*4]);
+		i += TileQuads::buildV(bordersSrc.r, h-16*s, w-16*s, 8*s,   &vert[i*4]);
 
 		/* Corners */
 		i += Quad::setTexPosRect(&vert[i*4], cornersSrc.tl, cornerRects.tl);
@@ -458,28 +480,30 @@ struct WindowPrivate
 	void buildControlsVert()
 	{
 		int i = 0;
+		int s = (tjHdScale > 1) ? tjHdScale : 1;
 		Vertex *vert = controlsQuadArray.vertices.data();
 
 		/* Cursor */
 		if (!cursorRect->isEmpty())
 		{
-			/* Effective cursor rect has 16 xy offset to window */
-			IntRect effectRect(cursorRect->x+16, cursorRect->y+16,
-			                   cursorRect->width, cursorRect->height);
+			/* Effective cursor rect has 16 xy offset to window.
+			 * cursor_rect itself is logical, the window is physical. */
+			IntRect effectRect((cursorRect->x+16)*s, (cursorRect->y+16)*s,
+			                   cursorRect->width*s, cursorRect->height*s);
 			cursorVert.vert = &vert[i*4];
 			TileQuads::buildFrameSource(cursorSrc, cursorVert.vert);
 			i += TileQuads::buildFrame(effectRect, cursorVert.vert);
 		}
 
 		/* Scroll arrow position: Top Bottom X, Left Right Y */
-		const Vec2i scroll = (size - Vec2i(16)) / 2;
+		const Vec2i scroll = (size - Vec2i(16*s)) / 2;
 
 		Sides<IntRect> scrollArrows;
 
-		scrollArrows.l = IntRect(4, scroll.y, 8, 16);
-		scrollArrows.r = IntRect(size.x - 12, scroll.y, 8, 16);
-		scrollArrows.t = IntRect(scroll.x, 4, 16, 8);
-		scrollArrows.b = IntRect(scroll.x, size.y - 12, 16, 8);
+		scrollArrows.l = IntRect(4*s, scroll.y, 8*s, 16*s);
+		scrollArrows.r = IntRect(size.x - 12*s, scroll.y, 8*s, 16*s);
+		scrollArrows.t = IntRect(scroll.x, 4*s, 16*s, 8*s);
+		scrollArrows.b = IntRect(scroll.x, size.y - 12*s, 16*s, 8*s);
 
 		if (contents)
 		{
@@ -489,10 +513,10 @@ struct WindowPrivate
 			if (contentsOffset.y > 0)
 				i += Quad::setTexPosRect(&vert[i*4], scrollArrowSrc.t, scrollArrows.t);
 
-			if ((size.x - 32) < (contents->width() - contentsOffset.x))
+			if ((size.x - 32*s) < (contents->width() - contentsOffset.x))
 				i += Quad::setTexPosRect(&vert[i*4], scrollArrowSrc.r, scrollArrows.r);
 
-			if ((size.y - 32) < (contents->height() - contentsOffset.y))
+			if ((size.y - 32*s) < (contents->height() - contentsOffset.y))
 				i += Quad::setTexPosRect(&vert[i*4], scrollArrowSrc.b, scrollArrows.b);
 		}
 
@@ -501,7 +525,7 @@ struct WindowPrivate
 		{
 			pauseAniVert.vert = &vert[i*4];
 			i += Quad::setTexPosRect(&vert[i*4], pauseAniSrc[pauseAniQuad[pauseAniQuadIdx]],
-			                         FloatRect((size.x - 16) / 2, size.y - 16, 16, 16));
+			                         FloatRect((size.x - 16*s) / 2, size.y - 16*s, 16*s, 16*s));
 		}
 
 		controlsQuadArray.commit();
@@ -680,6 +704,10 @@ struct WindowPrivate
 Window::Window(Viewport *viewport)
 	: ViewportElement(viewport)
 {
+	/* Skin rects depend on tjHdScale, which is only known once Graphics
+	 * has been constructed; windows are always created after that. */
+	tjInitWindowSrc();
+
 	p = new WindowPrivate(viewport);
 	onGeometryChange(scene->getGeometry());
 }

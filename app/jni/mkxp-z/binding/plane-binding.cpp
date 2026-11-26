@@ -50,8 +50,8 @@ DEF_GFX_PROP_OBJ_REF(Plane, Bitmap, Bitmap, "bitmap")
 DEF_GFX_PROP_OBJ_VAL(Plane, Color, Color, "color")
 DEF_GFX_PROP_OBJ_VAL(Plane, Tone, Tone, "tone")
 
-DEF_GFX_PROP_I(Plane, OX)
-DEF_GFX_PROP_I(Plane, OY)
+DEF_GFX_PROP_SCALED_I(Plane, OX)
+DEF_GFX_PROP_SCALED_I(Plane, OY)
 DEF_GFX_PROP_I(Plane, Opacity)
 DEF_GFX_PROP_I(Plane, BlendType)
 

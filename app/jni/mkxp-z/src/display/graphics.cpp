@@ -72,6 +72,30 @@
  * (tag "SDL/APP"), so every HD-path diagnostic goes through here. */
 #define TJHD_LOG(...) SDL_Log("TJHD: " __VA_ARGS__)
 
+/* Global logical -> physical scale for the whole 2D layer.
+ *
+ * Everything Ruby can touch (Bitmap sizes, Sprite x/y, Viewport rect, fonts)
+ * stays in logical RGSS pixels. The engine allocates textures and renders at
+ * tjHdScale times that, so a 640x480 script running with scale 2 produces
+ * genuinely 1280x960 frames instead of a 640x480 frame blown up by a shader.
+ * Set from config in the Graphics constructor; 1 disables everything. */
+int tjHdScale = 1;
+
+/* Glyph rasterisation multiplier. Follows tjHdScale unless explicitly set,
+ * so text can be sharpened while the rest of the layer is still at 1x. */
+int tjHdFontScale = 1;
+
+/* Clamp the user supplied scale to something a mobile GPU can actually
+ * allocate. 0/-1 in the config means "feature off". */
+static inline int tjSanitizeScale(int s)
+{
+    if (s < 1)
+        return 1;
+    if (s > 4)
+        return 4;
+    return s;
+}
+
 #define DEF_SCREEN_W (rgssVer == 1 ? 640 : 544)
 #define DEF_SCREEN_H (rgssVer == 1 ? 480 : 416)
 
@@ -842,7 +866,9 @@ struct GraphicsPrivate {
     IntruList<Disposable> dispList;
     
     GraphicsPrivate(RGSSThreadData *rtData)
-    : scRes(DEF_SCREEN_W, DEF_SCREEN_H), scSize(scRes),
+    : scRes(DEF_SCREEN_W * tjSanitizeScale(rtData->config.hdScale),
+            DEF_SCREEN_H * tjSanitizeScale(rtData->config.hdScale)),
+    scSize(scRes),
     winSize(rtData->config.defScreenW, rtData->config.defScreenH),
     screen(scRes.x, scRes.y), threadData(rtData),
     glCtx(SDL_GL_GetCurrentContext()), multithreadedMode(true),
@@ -853,6 +879,9 @@ struct GraphicsPrivate {
     integerLastMileScaling(rtData->config.integerScaling.lastMileScaling),
     hdUpscaleActive(rtData->config.hdUpscale), hdSharpFinal(rtData->config.hdSharpFinal),
     hdFailCount(0), hdLogged(false) {
+        tjHdScale = tjSanitizeScale(rtData->config.hdScale);
+        tjHdFontScale = (rtData->config.hdFontScale > 0)
+                        ? tjSanitizeScale(rtData->config.hdFontScale) : tjHdScale;
         avgFPSData = std::vector<unsigned long long>();
         avgFPSLock = SDL_CreateMutex();
         glResourceLock = SDL_CreateMutex();
@@ -1505,24 +1534,26 @@ void Graphics::fadein(int duration) {
 }
 
 Bitmap *Graphics::snapToBitmap() {
-    Bitmap *bitmap = new Bitmap(width(), height());
+    /* The framebuffer is physical, so the snapshot has to be too; Ruby
+     * sees it through Bitmap#width which divides by tjHdScale. */
+    Bitmap *bitmap = new Bitmap(p->scRes.x, p->scRes.y);
     
     p->compositeToBuffer(bitmap->getGLTypes());
     
     /* Taint entire bitmap */
-    bitmap->taintArea(IntRect(0, 0, width(), height()));
+    bitmap->taintArea(IntRect(0, 0, p->scRes.x, p->scRes.y));
     return bitmap;
 }
 
-int Graphics::width() const { return p->scRes.x; }
+int Graphics::width() const { return p->scRes.x / tjHdScale; }
 
-int Graphics::height() const { return p->scRes.y; }
+int Graphics::height() const { return p->scRes.y / tjHdScale; }
 
 void Graphics::resizeScreen(int width, int height) {
     p->threadData->rqWindowAdjust.wait();
     p->checkResize(true);
     
-    Vec2i size(width, height);
+    Vec2i size(width * tjHdScale, height * tjHdScale);
     
     if (p->scRes == size)
         return;
@@ -1547,15 +1578,15 @@ void Graphics::resizeScreen(int width, int height) {
     if (p->hdUpscaleActive)
         p->rebuildHDUpscaleBuffer();
     
-    TEXFBO::allocEmpty(p->frozenScene, width, height);
+    TEXFBO::allocEmpty(p->frozenScene, size.x, size.y);
     
-    FloatRect screenRect(0, 0, width, height);
+    FloatRect screenRect(0, 0, size.x, size.y);
     p->screenQuad.setTexPosRect(screenRect, screenRect);
     
     glState.scissorBox.set(IntRect(0, 0, p->scRes.x, p->scRes.y));
     
 #ifndef MKXPZ_BUILD_ANDROID
-    shState->eThread().requestWindowResize(width, height);
+    shState->eThread().requestWindowResize(size.x, size.y);
 #endif
 }
 

@@ -50,13 +50,15 @@ RB_METHOD(viewportInitialize) {
         rect = getPrivateDataCheck<Rect>(rectObj, RectType);
         
         GFX_LOCK;
-        v = new Viewport(rect);
+        v = new Viewport(rect->x * tjHdScale, rect->y * tjHdScale,
+                         rect->width * tjHdScale, rect->height * tjHdScale);
     } else {
         int x, y, width, height;
         
         rb_get_args(argc, argv, "iiii", &x, &y, &width, &height RB_ARG_END);
         GFX_LOCK;
-        v = new Viewport(x, y, width, height);
+        v = new Viewport(x * tjHdScale, y * tjHdScale,
+                         width * tjHdScale, height * tjHdScale);
     }
     
     setPrivateData(self, v);
@@ -80,8 +82,8 @@ DEF_GFX_PROP_OBJ_VAL(Viewport, Rect, Rect, "rect")
 DEF_GFX_PROP_OBJ_VAL(Viewport, Color, Color, "color")
 DEF_GFX_PROP_OBJ_VAL(Viewport, Tone, Tone, "tone")
 
-DEF_GFX_PROP_I(Viewport, OX)
-DEF_GFX_PROP_I(Viewport, OY)
+DEF_GFX_PROP_SCALED_I(Viewport, OX)
+DEF_GFX_PROP_SCALED_I(Viewport, OY)
 
 void viewportBindingInit() {
     VALUE klass = rb_define_class("Viewport", rb_cObject);

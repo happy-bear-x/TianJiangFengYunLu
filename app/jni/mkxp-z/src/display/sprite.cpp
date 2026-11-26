@@ -23,6 +23,7 @@
 
 #include "sharedstate.h"
 #include "bitmap.h"
+#include "graphics.h"
 #include "etc.h"
 #include "etc-internal.h"
 #include "util.h"
@@ -144,8 +145,8 @@ struct SpritePrivate
             return;
         
         /* Calculate effective (normalized) bush depth */
-        float texBushDepth = (bushDepth / trans.getScale().y) -
-        (srcRect->y + srcRect->height) +
+        float texBushDepth = (bushDepth * tjHdScale / trans.getScale().y) -
+        (srcRect->y + srcRect->height) * tjHdScale +
         bitmap->height();
         
         efBushDepth = 1.0f - texBushDepth / bitmap->height();
@@ -153,7 +154,18 @@ struct SpritePrivate
     
     void onSrcRectChange()
     {
+        /* srcRect is stored in logical pixels because Ruby owns that object
+         * directly. The texture and the scene graph are physical, so convert
+         * once here and let everything downstream stay in physical units. */
         FloatRect rect = srcRect->toFloatRect();
+        
+        if (tjHdScale > 1)
+        {
+            rect.x *= tjHdScale;
+            rect.y *= tjHdScale;
+            rect.w *= tjHdScale;
+            rect.h *= tjHdScale;
+        }
         Vec2i bmSize;
         
         if (!nullOrDisposed(bitmap))
@@ -373,9 +385,15 @@ void Sprite::setBitmap(Bitmap *bitmap)
     
     bitmap->ensureNonMega();
     
-    *p->srcRect = bitmap->rect();
+    /* srcRect lives in logical pixels; bitmap->rect() is physical */
+    {
+        IntRect r = bitmap->rect();
+        if (tjHdScale > 1)
+            r = IntRect(r.x / tjHdScale, r.y / tjHdScale,
+                        r.w / tjHdScale, r.h / tjHdScale);
+        *p->srcRect = r;
+    }
     p->onSrcRectChange();
-    p->quad.setPosRect(p->srcRect->toFloatRect());
     
     p->wave.dirty = true;
 }

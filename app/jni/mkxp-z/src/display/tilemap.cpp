@@ -27,6 +27,7 @@
 
 #include "sharedstate.h"
 #include "config.h"
+#include "graphics.h"
 #include "glstate.h"
 #include "gl-util.h"
 #include "gl-meta.h"
@@ -52,18 +53,25 @@ extern const StaticRect autotileRects[];
 
 typedef std::vector<SVertex> SVVector;
 
-static const int tilesetW  = 8 * 32;
-static const int autotileW = 3 * 32;
-static const int autotileH = 4 * 32;
+/* One tile is 32 logical pixels. With hdScale > 1 the tileset/autotile
+ * textures are uploaded at that multiple and every atlas coordinate, blit
+ * rect and screen tile position has to follow. Keeping these as macros means
+ * the ~30 call sites below stay untouched. */
+static inline int tjTSScale() { return (tjHdScale > 1) ? tjHdScale : 1; }
+static inline int tjTS() { return 32 * tjTSScale(); }
+
+#define tilesetW  (8 * tjTS())
+#define autotileW (3 * tjTS())
+#define autotileH (4 * tjTS())
 
 static const int autotileCount = 7;
 
 static const int atFrames = 8;
 static const int atFrameDur = 15;
-static const int atAreaW = autotileW * atFrames;
+static inline int atAreaW() { return autotileW * atFrames; }
 //static const int atAreaH = autotileH * autotileCount;
 
-static const int tsLaneW = tilesetW / 1;
+static inline int tsLaneW() { return tilesetW / 1; }
 
 /* Map viewport size
  *
@@ -433,7 +441,7 @@ struct TilemapPrivate
 		}
 
 		int tsH = tileset->height();
-		atlas.efTilesetH = tsH - (tsH % 32);
+		atlas.efTilesetH = tsH - (tsH % tjTS());
 
 		atlas.size = TileAtlas::minSize(atlas.efTilesetH, glState.caps.maxTexSize);
 
@@ -461,10 +469,10 @@ struct TilemapPrivate
 
 			usableATs.push_back(i);
 
-			if (autotiles[i]->height() == 32)
+			if (autotiles[i]->height() == tjTS())
 			{
 				atlas.smallATs[i] = true;
-				atlas.nATFrames[i] = autotiles[i]->width()/32;
+				atlas.nATFrames[i] = autotiles[i]->width()/tjTS();
 				animatedATs.push_back(i);
 			}
 			else
@@ -553,7 +561,7 @@ struct TilemapPrivate
 
 			int atW = autotile->width();
 			int atH = autotile->height();
-			int blitW = std::min(atW, atAreaW);
+			int blitW = std::min(atW, atAreaW());
 			int blitH = std::min(atH, autotileH);
 
 			GLMeta::blitSource(autotile->getGLTypes());
@@ -570,11 +578,11 @@ struct TilemapPrivate
 				/* Animated autotile */
 				if (atlas.smallATs[atInd])
 				{
-					int frames = atW/32;
-					for (int j = 0; j < atFrames*autotileH/32; ++j)
+					int frames = atW/tjTS();
+					for (int j = 0; j < atFrames*autotileH/tjTS(); ++j)
 					{
-						GLMeta::blitRectangle(IntRect(32*(j % frames), 0, 32, 32),
-						                      Vec2i(autotileW*(j % atFrames), atInd*autotileH + 32*(j / atFrames)));
+						GLMeta::blitRectangle(IntRect(tjTS()*(j % frames), 0, tjTS(), tjTS()),
+						                      Vec2i(autotileW*(j % atFrames), atInd*autotileH + tjTS()*(j / atFrames)));
 					}
 				}
 				else
@@ -610,14 +618,14 @@ struct TilemapPrivate
 					const TileAtlas::Blit &blitOp = blits[i];
 
 					Vec2i texSize;
-					shState->ensureTexSize(tsLaneW, blitOp.h, texSize);
+					shState->ensureTexSize(tsLaneW(), blitOp.h, texSize);
 					shState->bindTex();
 					GLMeta::subRectImageUpload(tsSurf->w, blitOp.src.x, blitOp.src.y,
-					                           0, 0, tsLaneW, blitOp.h, tsSurf, GL_RGBA);
+					                           0, 0, tsLaneW(), blitOp.h, tsSurf, GL_RGBA);
 
 					shader.setTexSize(texSize);
-					quad.setTexRect(FloatRect(0, 0, tsLaneW, blitOp.h));
-					quad.setPosRect(FloatRect(blitOp.dst.x, blitOp.dst.y, tsLaneW, blitOp.h));
+					quad.setTexRect(FloatRect(0, 0, tsLaneW(), blitOp.h));
+					quad.setPosRect(FloatRect(blitOp.dst.x, blitOp.dst.y, tsLaneW(), blitOp.h));
 
 					quad.draw();
 				}
@@ -636,7 +644,7 @@ struct TilemapPrivate
 					const TileAtlas::Blit &blitOp = blits[i];
 
 					GLMeta::subRectImageUpload(tsSurf->w, blitOp.src.x, blitOp.src.y,
-					                           blitOp.dst.x, blitOp.dst.y, tsLaneW, blitOp.h, tsSurf, GL_RGBA);
+					                           blitOp.dst.x, blitOp.dst.y, tsLaneW(), blitOp.h, tsSurf, GL_RGBA);
 				}
 
 				GLMeta::subRectImageEnd();
@@ -653,7 +661,7 @@ struct TilemapPrivate
 			{
 				const TileAtlas::Blit &blitOp = blits[i];
 
-				GLMeta::blitRectangle(IntRect(blitOp.src.x, blitOp.src.y, tsLaneW, blitOp.h),
+				GLMeta::blitRectangle(IntRect(blitOp.src.x, blitOp.src.y, tsLaneW(), blitOp.h),
 				                      blitOp.dst);
 			}
 
@@ -691,7 +699,7 @@ struct TilemapPrivate
 			/* Iterate over the 4 tile pieces */
 			for (int i = 0; i < 4; ++i)
 			{
-				FloatRect posRect(x*32, y*32, 16, 16);
+				FloatRect posRect(x*tjTS(), y*tjTS(), tjTS()/2, tjTS()/2);
 				atSelectSubPos(posRect, i);
 
 				FloatRect texRect = pieceRect[i];
@@ -709,8 +717,9 @@ struct TilemapPrivate
 		}
 		else
 		{
-			FloatRect posRect(x*32, y*32, 32, 32);
-			FloatRect texRect(0.5f, atInd * autotileH + 0.5f, 31, 31);
+			FloatRect posRect(x*tjTS(), y*tjTS(), tjTS(), tjTS());
+			FloatRect texRect(0.5f*tjTSScale(), atInd * autotileH + 0.5f*tjTSScale(),
+							  tjTS()-1, tjTS()-1);
 			SVertex v[4];
 			Quad::setTexPosRect(v, texRect, posRect);
 
@@ -763,7 +772,7 @@ struct TilemapPrivate
 
 		Vec2i texPos = TileAtlas::tileToAtlasCoor(tileX, tileY, atlas.efTilesetH, atlas.size.y);
 		FloatRect texRect((float) texPos.x+0.5f, (float) texPos.y+0.5f, 31, 31);
-		FloatRect posRect(x*32, y*32, 32, 32);
+		FloatRect posRect(x*tjTS(), y*tjTS(), tjTS(), tjTS());
 
 		SVertex v[4];
 		Quad::setTexPosRect(v, texRect, posRect);
@@ -999,7 +1008,7 @@ struct TilemapPrivate
 			updateFlashMapViewport();
 		}
 
-		dispPos = elem.sceneGeo.rect.pos() - wrap(combOrigin, 32);
+		dispPos = elem.sceneGeo.rect.pos() - wrap(combOrigin, tjTS());
 	}
 
 	void prepare()
@@ -1152,7 +1161,7 @@ void ZLayer::drawInt()
 
 int ZLayer::calculateZ(TilemapPrivate *p, int index)
 {
-	return 32 * (index + p->viewpPos.y + 1) - p->origin.y;
+	return tjTS() * (index + p->viewpPos.y + 1) - p->origin.y;
 }
 
 void ZLayer::initUpdateZ()

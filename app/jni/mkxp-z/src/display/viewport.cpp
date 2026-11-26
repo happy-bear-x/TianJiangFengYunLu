@@ -55,7 +55,10 @@ struct ViewportPrivate
 	      tone(&tmp.tone),
 	      isOnScreen(false)
 	{
-		rect->set(x, y, width, height);
+		/* x/y/width/height are physical (already scaled by the binding),
+		 * but 'rect' is the object Ruby holds and must stay logical. */
+		int s = (tjHdScale > 1) ? tjHdScale : 1;
+		rect->set(x / s, y / s, width / s, height / s);
 		updateRectCon();
 	}
 
@@ -66,7 +69,11 @@ struct ViewportPrivate
 
 	void onRectChange()
 	{
-		self->geometry.rect = rect->toIntRect();
+		IntRect r = rect->toIntRect();
+		if (tjHdScale > 1)
+			r = IntRect(r.x * tjHdScale, r.y * tjHdScale,
+			            r.w * tjHdScale, r.h * tjHdScale);
+		self->geometry.rect = r;
 		self->notifyGeometryChange();
 		recomputeOnScreen();
 	}
@@ -83,8 +90,9 @@ struct ViewportPrivate
 		SDL_Rect r1 = { screenRect.x, screenRect.y,
 		                screenRect.w, screenRect.h };
 
-		SDL_Rect r2 = { rect->x,     rect->y,
-		                rect->width, rect->height };
+		int s = (tjHdScale > 1) ? tjHdScale : 1;
+		SDL_Rect r2 = { rect->x * s,     rect->y * s,
+		                rect->width * s, rect->height * s };
 
 		SDL_Rect result;
 		isOnScreen = SDL_IntersectRect(&r1, &r2, &result);
@@ -110,7 +118,8 @@ Viewport::Viewport(Rect *rect)
     : SceneElement(*shState->screen()),
       sceneLink(this)
 {
-	initViewport(rect->x, rect->y, rect->width, rect->height);
+	int s = (tjHdScale > 1) ? tjHdScale : 1;
+	initViewport(rect->x * s, rect->y * s, rect->width * s, rect->height * s);
 }
 
 Viewport::Viewport()
@@ -118,7 +127,8 @@ Viewport::Viewport()
       sceneLink(this)
 {
 	const Graphics &graphics = shState->graphics();
-	initViewport(0, 0, graphics.width(), graphics.height());
+	int s = (tjHdScale > 1) ? tjHdScale : 1;
+	initViewport(0, 0, graphics.width() * s, graphics.height() * s);
 }
 
 void Viewport::initViewport(int x, int y, int width, int height)
@@ -195,7 +205,12 @@ void Viewport::composite()
 
 	/* Setup scissor */
 	glState.scissorTest.pushSet(true);
-	glState.scissorBox.pushSet(p->rect->toIntRect());
+	{
+		/* p->rect holds logical pixels; the scissor box is physical */
+		IntRect sr = p->rect->toIntRect();
+		int s = (tjHdScale > 1) ? tjHdScale : 1;
+		glState.scissorBox.pushSet(IntRect(sr.x * s, sr.y * s, sr.w * s, sr.h * s));
+	}
 
 	Scene::composite();
 

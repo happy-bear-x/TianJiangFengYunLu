@@ -558,6 +558,26 @@ DEF_PROP(Klass, double, PropName, float, rb_float_new)
 #define DEF_PROP_B(Klass, PropName)                                            \
 DEF_PROP(Klass, bool, PropName, bool, rb_bool_new)
 
+/* Font point sizes cross the Ruby boundary in logical units but are
+ * rasterised at physical size. Same trick as DEF_GFX_PROP_SCALED_I, just
+ * without the graphics lock (fonts are thread independent). */
+#define DEF_PROP_SCALED_I(Klass, PropName)                                         \
+RB_METHOD(Klass##Get##PropName) {                                            \
+RB_UNUSED_PARAM;                                                           \
+Klass *k = getPrivateData<Klass>(self);                                    \
+int value = 0;                                                             \
+GUARD_EXC(value = k->get##PropName();)                                     \
+return rb_fix_new(tjHdFontScale > 1 ? value / tjHdFontScale : value);      \
+}                                                                            \
+RB_METHOD(Klass##Set##PropName) {                                            \
+rb_check_argc(argc, 1);                                                    \
+Klass *k = getPrivateData<Klass>(self);                                    \
+int value;                                                                 \
+rb_int_arg(*argv, &value);                                                 \
+GUARD_EXC(k->set##PropName(value * tjHdFontScale);)                        \
+return *argv;                                                              \
+}
+
 #define INIT_PROP_BIND(Klass, PropName, prop_name_s)                           \
 {                                                                            \
 _rb_define_method(klass, prop_name_s, Klass##Get##PropName);               \
@@ -639,5 +659,30 @@ DEF_GFX_PROP(Klass, double, PropName, float, rb_float_new)
 
 #define DEF_GFX_PROP_B(Klass, PropName)                                            \
 DEF_GFX_PROP(Klass, bool, PropName, bool, rb_bool_new)
+
+/* Global logical -> physical scale, defined in display/graphics.cpp.
+ * 1 means "behave exactly like stock mkxp". */
+extern int tjHdScale;
+extern int tjHdFontScale;
+
+/* Same as DEF_GFX_PROP_I, except the value is stored in physical pixels
+ * inside the engine and exposed to Ruby in logical pixels. Used for every
+ * position/size that ends up on screen (x, y, width, height, ox, oy). */
+#define DEF_GFX_PROP_SCALED_I(Klass, PropName)                                     \
+RB_METHOD(Klass##Get##PropName) {                                            \
+RB_UNUSED_PARAM;                                                           \
+Klass *k = getPrivateData<Klass>(self);                                    \
+int value = 0;                                                             \
+GUARD_EXC(value = k->get##PropName();)                                     \
+return rb_fix_new(tjHdScale > 1 ? value / tjHdScale : value);              \
+}                                                                            \
+RB_METHOD(Klass##Set##PropName) {                                            \
+rb_check_argc(argc, 1);                                                    \
+Klass *k = getPrivateData<Klass>(self);                                    \
+int value;                                                                 \
+rb_int_arg(*argv, &value);                                                 \
+GFX_GUARD_EXC(k->set##PropName(value * tjHdScale);)                        \
+return *argv;                                                              \
+}
 
 #endif // BINDING_UTIL_H

@@ -33,6 +33,11 @@ struct AtomicFlag;
 struct THEORAPLAY_VideoFrame;
 struct Movie;
 
+/* Global logical -> physical scale for the 2D layer (1 = stock mkxp).
+ * Defined in graphics.cpp, set once from config when Graphics is created. */
+extern int tjHdScale;
+extern int tjHdFontScale;
+
 class Graphics
 {
 public:

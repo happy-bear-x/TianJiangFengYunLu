@@ -28,10 +28,15 @@
 #include "sharedstate.h"
 #include "global-ibo.h"
 #include "glstate.h"
+
+/* Global logical -> physical scale (defined in graphics.cpp). */
+extern int tjHdScale;
 #include "shader.h"
 #include "vertex.h"
 #include "quad.h"
 #include "etc-internal.h"
+
+extern int tjHdScale;
 
 #include <stdint.h>
 #include <assert.h>
@@ -65,10 +70,13 @@ tableGetWrapped(const Table &t, int x, int y, int z = 0)
 static inline Vec2i
 getTilePos(const Vec2i &pixelPos)
 {
-	/* Round the pixel position down to the nearest top left
-	 * tile boundary, by masking off the lower 5 bits (2^5 = 32).
-	 * Then divide by 32 to convert into tile units. */
-	return (pixelPos & ~(32-1)) / 32;
+	/* Round the pixel position down to the nearest top left tile boundary
+	 * and divide by the tile size to get tile units. The tile is 32 logical
+	 * pixels but every caller works in physical pixels (see graphics.cpp). */
+	int ts = 32 * ((tjHdScale > 1) ? tjHdScale : 1);
+
+	return Vec2i((pixelPos.x & ~(ts-1)) / ts,
+	             (pixelPos.y & ~(ts-1)) / ts);
 }
 
 enum AtSubPos
@@ -235,7 +243,8 @@ private:
 				if (!sampleFlashColor(color, x+viewp.x, y+viewp.y))
 					continue;
 
-				FloatRect posRect(x*32, y*32, 32, 32);
+				int ts = 32 * ((tjHdScale > 1) ? tjHdScale : 1);
+				FloatRect posRect(x*ts, y*ts, ts, ts);
 
 				CVertex v[4];
 				Quad::setPosRect(v, posRect);
