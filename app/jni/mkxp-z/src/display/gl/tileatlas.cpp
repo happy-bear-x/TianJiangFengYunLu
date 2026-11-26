@@ -21,8 +21,31 @@
 
 #include "tileatlas.h"
 
+/* Resolution multiplier applied to the whole logical coordinate space
+ * (see display/graphics.h). A tile is 32 logical pixels, so it occupies
+ * 32*scale physical pixels in the tileset texture and in the atlas. Every
+ * constant below is derived from that. */
+extern int tjHdScale;
+
 namespace TileAtlas
 {
+
+static inline int atScale() { return (tjHdScale > 1) ? tjHdScale : 1; }
+static inline int tjTS() { return 32 * atScale(); }
+
+/* Buffer between autotile area and tileset */
+static inline int atBuffer() { return tjTS(); }
+/* Autotile area width */
+static inline int atAreaW() { return tjTS()*3*8; }
+/* Autotile area height */
+static inline int atAreaH() { return tjTS()*4*7 + atBuffer(); }
+
+static inline int tilesetW() { return tjTS()*8; }
+static inline int tsLaneW() { return tilesetW() / 1; }
+static inline int underAtLanes() { return atAreaW() / tsLaneW() + !!(atAreaW() % tsLaneW()); }
+
+/* Autotile area */
+static inline int atArea() { return underAtLanes() * tsLaneW() * atAreaH(); }
 
 /* A Column represents a Rect
  * with undefined width */
@@ -37,42 +60,28 @@ struct Column
 
 typedef std::vector<Column> ColumnVec;
 
-/* Buffer between autotile area and tileset */
-static const int atBuffer = 32;
-/* Autotile area width */
-static const int atAreaW = 32*3*8;
-/* Autotile area height */
-static const int atAreaH = 32*4*7 + atBuffer;
-
-static const int tilesetW = 32*8;
-static const int tsLaneW = tilesetW / 1;
-static const int underAtLanes = atAreaW / tsLaneW + !!(atAreaW % tsLaneW);
-
-/* Autotile area */
-static const int atArea = underAtLanes * tsLaneW * atAreaH;
-
 static int freeArea(int width, int height)
 {
-	return width * height - atArea;
+	return width * height - atArea();
 }
 
 Vec2i minSize(int tilesetH, int maxAtlasSize)
 {
-	int width = underAtLanes * tsLaneW;
-	int height = atAreaH;
+	int width = underAtLanes() * tsLaneW();
+	int height = atAreaH();
 
-	const int tsArea = tilesetW * tilesetH;
+	const int tsArea = tilesetW() * tilesetH;
 
 	/* Expand vertically */
 	while (freeArea(width, height) < tsArea && height < maxAtlasSize)
-		height += 32;
+		height += tjTS();
 
 	if (freeArea(width, height) >= tsArea && height <= maxAtlasSize)
 		return Vec2i(width, height);
 
 	/* Expand horizontally */
 	while (freeArea(width, height) < tsArea && width < maxAtlasSize)
-		width += tsLaneW;
+		width += tsLaneW();
 
 	if (freeArea(width, height) >= tsArea && width <= maxAtlasSize)
 		return Vec2i(width, height);
@@ -94,19 +103,19 @@ static ColumnVec calcSrcCols(int tilesetH)
 static ColumnVec calcDstCols(int atlasW, int atlasH)
 {
 	ColumnVec cols;
-	cols.reserve(underAtLanes);
+	cols.reserve(underAtLanes());
 
 	/* Columns below the autotile area */
-	const int underAt = atlasH - atAreaH;
+	const int underAt = atlasH - atAreaH();
 
-	for (int i = 0; i < underAtLanes; ++i)
-		cols.push_back(Column(i*tsLaneW, atAreaH, underAt));
+	for (int i = 0; i < underAtLanes(); ++i)
+		cols.push_back(Column(i*tsLaneW(), atAreaH(), underAt));
 
-	const int remCols = atlasW / tsLaneW - underAtLanes;
+	const int remCols = atlasW / tsLaneW() - underAtLanes();
 
 	if (remCols > 0)
 		for (int i = 0; i < remCols; ++i)
-			cols.push_back(Column((underAtLanes+i)*tsLaneW, 0, atlasH));
+			cols.push_back(Column((underAtLanes()+i)*tsLaneW(), 0, atlasH));
 
 	return cols;
 }
@@ -172,13 +181,13 @@ BlitVec calcBlits(int tilesetH, const Vec2i &atlasSize)
 
 Vec2i tileToAtlasCoor(int tileX, int tileY, int tilesetH, int atlasH)
 {
-	int laneX = tileX*32;
-	int laneY = tileY*32;
+	int laneX = tileX*tjTS();
+	int laneY = tileY*tjTS();
 
 	int longlaneH = atlasH;
-	int shortlaneH = longlaneH - atAreaH;
+	int shortlaneH = longlaneH - atAreaH();
 
-	int longlaneOffset = shortlaneH * underAtLanes;
+	int longlaneOffset = shortlaneH * underAtLanes();
 
 	int laneIdx = 0;
 	int atlasY = 0;
@@ -194,17 +203,17 @@ Vec2i tileToAtlasCoor(int tileX, int tileY, int tilesetH, int atlasH)
 	{
 		/* Below autotile area */
 		laneIdx = laneY / shortlaneH;
-		atlasY  = laneY % shortlaneH + atAreaH;
+		atlasY  = laneY % shortlaneH + atAreaH();
 	}
 	else
 	{
 		/* Right of autotile area */
 		int _y = laneY - longlaneOffset;
-		laneIdx = underAtLanes + _y / longlaneH;
+		laneIdx = underAtLanes() + _y / longlaneH;
 		atlasY = _y % longlaneH;
 	}
 
-	int atlasX = laneIdx * tsLaneW + laneX;
+	int atlasX = laneIdx * tsLaneW() + laneX;
 
 	return Vec2i(atlasX, atlasY);
 }

@@ -64,6 +64,18 @@ static inline int tjTS() { return 32 * tjTSScale(); }
 #define autotileW (3 * tjTS())
 #define autotileH (4 * tjTS())
 
+/* autotileRects is a compile time table in classic 32px space; the four
+ * quarter rects of every autotile pattern have to follow the tileset
+ * magnification like everything else. Scaling all four fields keeps the
+ * half-pixel inset that avoids sampling the neighbouring quarter. */
+static inline FloatRect tjAutotilePiece(const StaticRect &r)
+{
+	int s = tjTSScale();
+	if (s == 1)
+		return FloatRect(r.x, r.y, r.w, r.h);
+	return FloatRect(r.x * s, r.y * s, r.w * s, r.h * s);
+}
+
 static const int autotileCount = 7;
 
 static const int atFrames = 8;
@@ -702,7 +714,7 @@ struct TilemapPrivate
 				FloatRect posRect(x*tjTS(), y*tjTS(), tjTS()/2, tjTS()/2);
 				atSelectSubPos(posRect, i);
 
-				FloatRect texRect = pieceRect[i];
+				FloatRect texRect = tjAutotilePiece(pieceRect[i]);
 
 				/* Adjust to atlas coordinates */
 				texRect.y += atInd * autotileH;
@@ -771,7 +783,9 @@ struct TilemapPrivate
 		int tileY = tsInd / 8;
 
 		Vec2i texPos = TileAtlas::tileToAtlasCoor(tileX, tileY, atlas.efTilesetH, atlas.size.y);
-		FloatRect texRect((float) texPos.x+0.5f, (float) texPos.y+0.5f, 31, 31);
+		FloatRect texRect((float) texPos.x+0.5f*tjTSScale(),
+		                  (float) texPos.y+0.5f*tjTSScale(),
+		                  tjTS()-1, tjTS()-1);
 		FloatRect posRect(x*tjTS(), y*tjTS(), tjTS(), tjTS());
 
 		SVertex v[4];
