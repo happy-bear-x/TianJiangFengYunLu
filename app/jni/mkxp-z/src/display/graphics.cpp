@@ -889,9 +889,10 @@ struct GraphicsPrivate {
         recalculateScreenSize(rtData->config.fixedAspectRatio);
         updateScreenResoRatio(rtData);
 
-        TJHD_LOG("graphics init: hdUpscale=%d canvas=%dx%d win=%dx%d defScreen=%dx%d rgss=%d",
+        TJHD_LOG("graphics init: hdUpscale=%d canvas=%dx%d win=%dx%d defScreen=%dx%d rgss=%d scale=%d fontScale=%d",
                  (int)hdUpscaleActive, scRes.x, scRes.y, winSize.x, winSize.y,
-                 rtData->config.defScreenW, rtData->config.defScreenH, rgssVer);
+                 rtData->config.defScreenW, rtData->config.defScreenH, rgssVer,
+                 tjHdScale, tjHdFontScale);
 
         if (integerScaleActive) {
             integerScaleFactor = Vec2i(0, 0);
@@ -1557,6 +1558,9 @@ void Graphics::resizeScreen(int width, int height) {
     
     if (p->scRes == size)
         return;
+
+    TJHD_LOG("resizeScreen: logical %dx%d -> physical %dx%d (scale=%d)",
+             width, height, size.x, size.y, tjHdScale);
     
     p->scRes = size;
     

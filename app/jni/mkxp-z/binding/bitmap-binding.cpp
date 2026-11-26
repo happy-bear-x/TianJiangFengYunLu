@@ -104,7 +104,7 @@ RB_METHOD(bitmapHeight) {
     int value = 0;
     GUARD_EXC(value = b->height(););
     
-    return INT2FIX(value);
+    return INT2FIX(tjHdScale > 1 ? value / tjHdScale : value);
 }
 
 RB_METHOD(bitmapRect) {
