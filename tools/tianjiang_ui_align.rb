@@ -83,6 +83,11 @@ if defined?(Window_Base)
         nx = x
         if width == 640 && defined?(Scene_File) && $scene.is_a?(Scene_File)
           nx = x + (Graphics.width - 640) / 2
+        elsif defined?(Scene_Battle) && $scene.is_a?(Scene_Battle)
+          # 战斗界面整套按 640 坐标布局（视口和战斗背景已经铺满画布，
+          # 见 Spriteset_Battle / mkxp_compat），窗口不能单独留在最左边，
+          # 否则状态栏、指令窗口和中央的战斗者站位对不上。
+          nx = x + (Graphics.width - 640) / 2
         end
         tj_align_initialize(nx, y, width, height)
       end
