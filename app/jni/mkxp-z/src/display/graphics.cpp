@@ -1560,7 +1560,10 @@ void Graphics::resizeScreen(int width, int height) {
     
     p->scRes = size;
     
-    p->screen.setResolution(width, height);
+    /* The scene must render at the physical canvas size we just adopted;
+     * passing the logical width/height here would leave the framebuffer at
+     * half resolution and the picture would only fill a corner. */
+    p->screen.setResolution(size.x, size.y);
     
 #ifdef MKXPZ_BUILD_ANDROID
     /* The window is the physical surface on Android and its size is decided by
