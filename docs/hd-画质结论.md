@@ -211,3 +211,165 @@ end
 | `tools/install_hd_fullscreen.py` | 修 `Spriteset_Battle` 写死的 `src_rect` |
 | `_build/hd/resrgan/` | realesrgan-ncnn-vulkan 可执行文件与模型（未入库） |
 | `docs/hd-verify/` | 显示方式对比、像素风对比、翼龙原图对比 |
+
+---
+
+# 素材画风复核：Battlers / Animations（2026-11-26）
+
+上一节把 `Battlers` / `Animations` 笼统归进"像素风，不动"。复查后要拆开说，
+因为**这两类的真实构成完全不同**，而且我一开始被样本骗过一次。
+
+## 一、判据：相邻像素差的中位数（med）
+
+早期用"色数"分类会被抗锯齿污染（P 模式转 RGBA 后每张都有 250+ 唯一色），不能用。
+有效判据是**水平相邻像素的最大通道差的中位数** `med`：
+
+- 像素画：大面积纯色内部，**一半以上的相邻像素对完全相同** → `med == 0`
+- 手绘：明暗连续变化 → `med` 在 15~34
+
+辅助指标 `zero`＝相邻差为 0 的像素占比，但单独用会误判"大片纯色 + 少量渐变"的卡通画。
+
+## 二、Battlers：主流是像素画，**不适合超分**
+
+148 张的分布：`med==0` 38 张、`med` 1~3 有 22 张、`med>3` 87 张。
+但**按 med 一刀切是错的**——熊头 `1.png` 的 med 只有 1，超分效果却很好（它本是手绘）。
+
+把 60 张可疑样本铺成缩略图人工核对后，真实情况是：
+
+> 蝙蝠、骷髅、史莱姆、兔子、狮子、蛇、老鼠、像素人物…… **绝大多数是硬边像素画**，
+> 手绘的只有熊头（`1.png`）、蓝衣女（`82.png`）这类少数几张。
+
+实测 `101.png`（紫衣像素人物）2x 超分：黑发被抹成平滑渐变、轮廓长出灰边、
+衣服色块变成过渡 —— 正是"像素硬边被抹掉"的典型破坏。
+
+**结论：Battlers 整体保持原样。**
+像素画在 2 倍渲染画布上被 nearest 放大，方块边缘清晰、风格统一，这本来就是正确显示方式。
+只挑少数手绘图上 2x 会让同一场战斗里立绘风格分裂，弊大于利。
+
+## 三、Animations：主流是手绘光效，**该超分，但卡在引擎**
+
+38 张里约 30 张是柔和光效（火焰 / 冰 / 雷 / 水 / 风 / 光 / 暗 / 爆炸 / 治愈光球 / 龙卷风），
+只有棕色宝箱、剑、黄色光标、ZZZ 睡眠图标等少数几张是实心像素物。
+
+超分实测（`003-Attack01.png` 首帧，192×192，Tenengrad 梯度能量）：
+
+| 方案 | 梯度能量 | 观感 |
+|---|---|---|
+| nearest 2x（当前实现） | 13814 | 放射光芒呈方块阶梯，最难看 |
+| bilinear 2x | 8614 | 糊成一团，光芒细节丢失 |
+| **ESRGAN x2** | **13308** | 光芒锐利连续、光晕过渡自然，无假细节 |
+
+也就是说现在的 1x 贴图在 2x 画布上被放大，**战斗特效正在呈现方块阶梯**，超分收益明确。
+
+**但做不了**：动画帧由引擎按固定尺寸切分（`Sprite#animation` / `loop_animation`），
+而 `_src/all` 下的 211 个脚本里没有任何切帧代码（只有调用点）。
+`engine-src` 这份源码的 `sprite-binding.cpp` 只注册了 6 个属性、不含 animation，
+与运行时 `libmkxp-z.so` 不是同一版本，改不了。
+
+要推进只有两条：
+1. 拿到与运行时一致的引擎源码，让帧尺寸从 `bitmap.width / 5` 推导（改一处，2x sheet 免配置）
+2. 在 Ruby 层用 Sprite 自绘动画，绕开引擎（工作量大、要覆盖战斗与状态两类调用）
+
+## 四、透明通道处理（如果以后做立绘或特效 2x）
+
+- 素材混有 `P`（调色板，132 张）和 `RGBA`（16 张），**必须落 PNG，不能用 JPEG**
+- 超分前把全透明区填白，否则模型会在边缘生成暗边
+- 超分后**不要用模型输出的 alpha**（会被推成半透明渐变），改成原 alpha 单独放大再合回去
+- `0.png` 本身是 148 张里唯一全透明的空占位，不是处理失败
+
+---
+
+# 二轮：全局 2 倍逻辑分辨率（hdScale）
+
+日期：2026-11-26　分支：`hd-remaster`
+
+## 五、"两版看起来一模一样"的根因
+
+HD 版此前只做了两件事：全屏 CG 换成 1280×960、加上 MMPX 后处理。但
+**画布本身始终是 853×480，素材信息量锁死在 480 高**，MMPX 只是把这个
+小图插值放大。而且日志实证：
+
+```
+TJHD: mmpx skipped: window 1280x720 cannot hold 1706x960
+```
+
+1280×720 的模拟器窗口根本放不下 2 倍画布，MMPX 一次都没启用。
+所以在游戏内看到"和原版没区别"是**必然结果**，不是打包错了。
+
+## 六、方案：逻辑坐标不动，物理像素翻倍
+
+引擎新增两个配置项（`mkxp.json`）：
+
+| 键 | 默认 | 含义 |
+|---|---|---|
+| `hdScale` | 1 | 全局逻辑→物理倍率 |
+| `hdFontScale` | 0 | 字体独立倍率，0 表示跟随 `hdScale` |
+
+核心约定：**Ruby 层永远工作在逻辑像素（640×480 的世界），引擎内部所有
+Bitmap 分配、坐标、字体栅格化都按倍率放大，binding 层做逻辑↔物理换算。**
+
+- `Graphics::width()/height()` 返回**逻辑值**（`scRes / tjHdScale`）
+- `Graphics::resizeScreen()` 收逻辑值，内部乘倍率；`screen.setResolution()`
+  必须收到**物理值**（否则帧缓冲只有半尺寸、画面缩在左上角）
+- `Bitmap`：构造、`blt`、`stretch_blt`、`fill_rect`、`get/set_pixel`、
+  `draw_text`、`text_size`、`gradient_fill_rect`、`clear_rect`、`rect` 全部换算；
+  `width/height` 读值除倍率
+- `Sprite`/`Window`/`Viewport`/`Plane`/`Tilemap` 的 `x/y/ox/oy/width/height`
+  全部走 `DEF_GFX_PROP_SCALED_I`；`src_rect`/`viewport.rect`/`cursor_rect`
+  保持逻辑值，由核心类在使用点换算
+- `Window` 皮肤矩形、`contentsRect` 的 16px 内边距、`buildControlsVert`
+  的控件坐标全部乘倍率
+- `Input::mouseX/Y` 结果除倍率，触摸层继续按逻辑坐标工作
+
+素材规则随之简化为一条：**所有素材文件都是原始的 2 倍**（最近邻放大，
+像素画无损），于是"物理尺寸 = 文件尺寸、逻辑尺寸 = 物理/2"恒成立，
+不需要任何目录白名单。
+
+## 七、踩到的四个坑
+
+1. **`bitmapHeight` getter 漏除倍率**（批量替换只命中了 `bitmapWidth`）。
+   症状：`Bitmap.new(640,480)` 读出 `640x960`，`mkxp_compat.rb` 的全屏图
+   整除判断 `w/640 == h/480` 失败（1≠2），`zoom_x` 不设置 → 全屏图只占左上角。
+2. **`resizeScreen` 把逻辑尺寸传给 `screen.setResolution`** → 帧缓冲半尺寸。
+3. **Window 内容区 16px 内边距没缩放** → 文字裁剪与绘制定位错位。
+4. **Tilemap atlas 布局是硬编码 32**（`gl/tileatlas.cpp` 的 `atBuffer`、
+   `atAreaW/H`、`tilesetW`、`tsLaneW`、`tileToAtlasCoor` 的 `tileX*32`）。
+   tilemap 已按 64 绘制而 atlas 仍按 32 排布 → **每个图块取到隔壁 32px 的内容**，
+   画面撕裂错位。另有 `autotileRects` 这张 32 基准的分块表、以及
+   `handleTile` 里 `texRect(…, 31, 31)` 也漏改。
+
+## 八、实测结果
+
+设备：1280×720 模拟器，`hdScale=2`。
+
+```
+TJHD: graphics init: hdUpscale=0 canvas=1280x960 … scale=2 fontScale=2
+TJHD: resizeScreen: logical 853x480 -> physical 1706x960 (scale=2)
+```
+
+画布 1706×960 物理（= 853×480 逻辑 ×2），最终缩到窗口 1280×720。
+
+- 标题、开场 CG、地图、菜单、子窗口、对话全部铺满无黑边
+- `tj_dbg` 探针：`BMP 640x480 -> 640x480`、`SPR zoom=1.333x1.0`
+- 地图图块排列正确，无错位
+- CPU 7.6%（`top`，行走中），RSS 296 MB
+
+与原版同机型同分辨率对比标题菜单（3 倍放大目视）：
+
+| | 文字边缘 | 窗口边框 |
+|---|---|---|
+| 原版 1.6.2（480 高画布） | 阶梯状锯齿，笔画粗断 | 花纹是放大后的方块 |
+| hdScale=2 | 笔画连续平滑 | 花纹干净 |
+
+## 九、代价与遗留
+
+- **arm64-only**：`abiFilters 'arm64-v8a'`，旧的 v7a 库没有新特性，直接删；
+  包名独立为 `com.tianjiang.fengyun.hd`，与正式版共存不冲突存档
+- **APK 137 MB**：素材 2 倍（game.zip 121 MB）+ 单 ABI native 34 MB
+- **Tilemap atlas 胀到 3072×4096（约 50 MB VRAM）**：tileset 本身 512×18200
+  就要 37 MB。低端 2048 纹理上限的机器会抛
+  `Cannot allocate big enough texture for tileset atlas`。
+  真要省内存，得让 tileset 保持 1 倍、atlas 按 1 倍排布而绘制时放大 2 倍
+  （像素画视觉等价），是下一步的优化项
+- **`tileatlasvx.cpp`（VX 版图块）未适配**，本项目 rgssVersion=1 用不到
+- **战斗场景本轮未实测**：已走到城镇地图与对话，未能触发遇敌

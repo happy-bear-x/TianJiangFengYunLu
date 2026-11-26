@@ -6,7 +6,7 @@
   "smoothScaling": false,
   "integerScalingActive": false,
   "integerScalingLastMile": false,
-  "hdUpscale": true,
+  "hdUpscale": false,
   "hdSharpFinal": true,
   "vsync": true,
   "defScreenW": 640,
@@ -25,5 +25,7 @@
     "verdana>noto sans cjk sc",
     "times new roman>noto sans cjk sc"
   ],
-  "SESourceCount": 16
+  "SESourceCount": 16,
+  "hdScale": 2,
+  "hdFontScale": 2
 }
