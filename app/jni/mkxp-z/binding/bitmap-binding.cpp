@@ -54,7 +54,7 @@ void bitmapInitProps(Bitmap *b, VALUE self) {
 
 /* Logical -> physical rect conversion. Ruby always talks in logical pixels
  * (the 640x480 world), the engine stores everything at tjHdScale times that. */
-static inline IntRect tjS(const Rect *r)
+static inline IntRect tjS(Rect *r)
 {
     if (tjHdScale <= 1)
         return r->toIntRect();

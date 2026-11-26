@@ -22,6 +22,7 @@
 #include "font.h"
 
 #include "sharedstate.h"
+#include "graphics.h"
 #include "filesystem.h"
 #include "exception.h"
 #include "boost-hash.h"
@@ -356,7 +357,11 @@ bool Font::doesExist(const char *name)
 Font::Font(const std::vector<std::string> *names,
            int size)
 {
-	p = new FontPrivate(size ? size : FontPrivate::defaultSize);
+	/* Glyphs are rasterised at physical size; Ruby still talks in logical
+	 * points (see DEF_PROP_SCALED_I for Font#size). A size of 0 means "use
+	 * the default", which is stored in logical points as well. */
+	int fs = (tjHdFontScale > 1) ? tjHdFontScale : 1;
+	p = new FontPrivate((size ? size : FontPrivate::defaultSize) * fs);
 
 	if (names)
 		setName(*names);
