@@ -622,7 +622,8 @@ struct WindowPrivate
 		const Vec2i efPos = position + sceneOffset;
 
 		const IntRect windowRect(efPos, size);
-		const IntRect contentsRect(efPos + Vec2i(16), size - Vec2i(32));
+		int s = (tjHdScale > 1) ? tjHdScale : 1;
+		const IntRect contentsRect(efPos + Vec2i(16*s), size - Vec2i(32*s));
 
 		glState.scissorTest.pushSet(true);
 		glState.scissorBox.push();
@@ -650,7 +651,7 @@ struct WindowPrivate
 			/* Draw contents bitmap */
 			glState.scissorBox.setIntersect(contentsRect);
 
-			shader.setTranslation(efPos + (Vec2i(16) - contentsOffset));
+			shader.setTranslation(efPos + (Vec2i(16*s) - contentsOffset));
 
 			contents->bindTex(shader);
 			contentsQuad.draw();
