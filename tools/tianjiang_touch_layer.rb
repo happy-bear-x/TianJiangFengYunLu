@@ -17,6 +17,8 @@ module TJTouch
   @queue = {}
   @probe_frame = 0
   @tap_prev = false
+  # Java 侧双击系统返回键时写这个标记文件
+  BACK_MARKER = "tj_back_exit"
   # 诊断探针：仅当游戏目录里放了 tj_probe 文件时启用，默认零开销。
   @probe_on = begin
     File.exist?("tj_probe")
@@ -59,10 +61,40 @@ module TJTouch
     end
 
     def tick
+      poll_back
       @queue.keys.each do |k|
         @queue[k] -= 1
         @queue.delete(k) if @queue[k] <= 0
       end
+    end
+
+    #------------------------------------------------------------------------
+    # 双击系统返回键
+    # Java 侧在 800ms 内收到两次 BACK 时写 game/tj_back_exit（物理返回键
+    # 在 SDL 里没有对应的 RGSS 输入位，硬塞 keycode 只会落到未映射的
+    # scancode 上，所以走文件而不是注入按键）。
+    #
+    # $tj_back_req 只活一帧：本轮 Input.update 置位，紧接着的场景 update
+    # 消费；下一轮 Input.update 开头就被清空。这样标题、战斗这些不关心
+    # 返回键的场景不会把请求攒下来，等进地图时突然弹窗。
+    #------------------------------------------------------------------------
+    def poll_back
+      $tj_back_req = nil
+      return unless (Graphics.frame_count % 8).zero?
+      return unless FileTest.exist?(BACK_MARKER)
+      age = begin
+        Time.now - File.mtime(BACK_MARKER)
+      rescue Exception
+        0
+      end
+      begin
+        File.delete(BACK_MARKER)
+      rescue Exception
+      end
+      # 超过 3 秒的标记视为陈旧（比如在标题界面误触），直接丢弃
+      $tj_back_req = true if age < 3
+    rescue Exception
+      nil
     end
 
     # 画布坐标 → 窗口项 index。

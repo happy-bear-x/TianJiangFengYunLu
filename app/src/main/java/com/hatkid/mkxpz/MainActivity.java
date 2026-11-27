@@ -15,6 +15,7 @@ import android.view.WindowManager;
 import android.view.InputDevice;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.os.Environment;
 import android.os.FileObserver;
 import android.os.Vibrator;
@@ -24,6 +25,7 @@ import android.os.storage.OnObbStateChangeListener;
 import android.net.Uri;
 import android.provider.Settings;
 import android.util.Log;
+import android.widget.Toast;
 import java.util.Locale;
 import java.io.File;
 
@@ -52,6 +54,9 @@ public class MainActivity extends SDLActivity
     // In-screen gamepad
     private final Gamepad mGamepad = new Gamepad();
     private boolean mGamepadInvisible = false;
+    // 双击返回键：上一次按下的时间戳（uptimeMillis），0 表示没有待配对的按键
+    private long mLastBackAt = 0L;
+    private static final long BACK_DOUBLE_MS = 800L;
 
     private void runSDLThread()
     {
@@ -286,9 +291,72 @@ public class MainActivity extends SDLActivity
         System.exit(0);
     }
 
+    /**
+     * 双击返回键打开「结束游戏」确认框。
+     *
+     * 第一次按下只提示，第二次在 800ms 内则通知 Ruby。物理返回键在 SDL 里
+     * 没有对应的 RGSS 输入位（硬塞 keycode 只会落到未映射的 scancode 上），
+     * 所以走标记文件：Ruby 侧 TJTouch.poll_back 在 Input.update 里轮询，
+     * 命中后由 Scene_Map 切到 Scene_End。
+     *
+     * 返回键一律不交给系统：单按现在什么都不做，双击才弹确认框，
+     * 避免手滑直接把游戏进程关掉。
+     */
+    private void handleBackKey()
+    {
+        long now = SystemClock.uptimeMillis();
+
+        if (mLastBackAt != 0L && now - mLastBackAt <= BACK_DOUBLE_MS)
+        {
+            mLastBackAt = 0L;
+            requestExitMenu();
+            return;
+        }
+
+        mLastBackAt = now;
+        Toast.makeText(this, "再按一次返回键，打开游戏菜单", Toast.LENGTH_SHORT).show();
+    }
+
+    /** 写 game/tj_back_exit，Ruby 侧读到后弹出退出确认框。 */
+    private void requestExitMenu()
+    {
+        try
+        {
+            File dir = new File(getFilesDir(), "game");
+
+            if (!dir.exists())
+                dir.mkdirs();
+
+            File marker = new File(dir, "tj_back_exit");
+            java.io.FileOutputStream out = new java.io.FileOutputStream(marker, false);
+
+            out.write(String.valueOf(System.currentTimeMillis()).getBytes("UTF-8"));
+            out.close();
+        }
+        catch (Exception e)
+        {
+            Log.w(TAG, "requestExitMenu failed", e);
+        }
+    }
+
+    @Override
+    public void onBackPressed()
+    {
+        // 部分场景（手势返回）不会走 dispatchKeyEvent，这里兜底
+        handleBackKey();
+    }
+
     @Override
     public boolean dispatchKeyEvent(KeyEvent evt)
     {
+        if (evt.getKeyCode() == KeyEvent.KEYCODE_BACK)
+        {
+            if (evt.getAction() == KeyEvent.ACTION_DOWN && evt.getRepeatCount() == 0)
+                handleBackKey();
+
+            return true;
+        }
+
         if (
             evt.getKeyCode() != KeyEvent.KEYCODE_BACK &&
             evt.getKeyCode() != KeyEvent.KEYCODE_VOLUME_UP &&
