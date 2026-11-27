@@ -104,6 +104,16 @@ trail.unshift([px, py])
 trail.slice!(TJ_TRAIL_MAX, trail.size) if trail.size > TJ_TRAIL_MAX
 end
 
+# moveto 时朝向还没定（transfer_player 是 moveto 之后才 turn_*），
+# 所以落地那一刻先按旧朝向摆一次，等下一帧朝向定了再按新朝向摆一次。
+def tj_realign_pending_one
+return if @tj_realign_pending == nil
+x, y = @tj_realign_pending
+@tj_realign_pending = nil
+return if $game_player.x != x or $game_player.y != y
+tj_realign_party(x, y)
+end
+
 def tj_sync_followers
 return if @characters == nil
 trail = tj_trail
@@ -135,6 +145,7 @@ end
 NEW_MOVETO = """def moveto_party_actors( x, y )
 setup_actor_character_sprites
 @move_list = [] if @move_list == nil
+@tj_realign_pending = [ x, y ]
 tj_realign_party( x, y )
 move_list_setup
 end
@@ -174,8 +185,9 @@ def main():
     while s[j] != b"setup_actor_character_sprites":
         j += 1
     assert j - idx < 5, "update_party_actors body changed"
-    lines[j + 1:j + 1] = [b"tj_trail_track", b"tj_sync_followers"]
-    s[j + 1:j + 1] = [b"tj_trail_track", b"tj_sync_followers"]
+    calls = [b"tj_trail_track", b"tj_realign_pending_one", b"tj_sync_followers"]
+    lines[j + 1:j + 1] = calls
+    s[j + 1:j + 1] = calls
 
     # 3) moveto_party_actors 整体换成 朝向前摆 + 清空移动队列
     start = s.index(b"def moveto_party_actors( x, y )")
@@ -197,6 +209,7 @@ def main():
     cs = zlib.decompress(ce[2]).decode("utf-8", "replace").replace("\r\n", "\n")
     m = re.search(r"def update_party_actors\n(.*?)\ndef ", cs, re.S)
     assert m and "tj_trail_track" in m.group(1) and "tj_sync_followers" in m.group(1)
+    assert "tj_realign_pending_one" in m.group(1)
     assert "def tj_realign_party(x, y)" in cs
     assert "tj_realign_party( x, y )" in cs
     assert cs.count("def moveto_party_actors( x, y )") == 1
