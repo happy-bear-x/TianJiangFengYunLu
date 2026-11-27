@@ -33,6 +33,30 @@ varying vec2 v_texCoord;
 void main()
 {
 	vec2 scale = destSize / texSize;
+
+	/* Downscale path. The canvas is a supersampled buffer (2x the logical
+	 * resolution) and the window is smaller, so this blit averages ~1.33x1.33
+	 * source texels per destination pixel. The texture filter on this path is
+	 * GL_NEAREST, so plain texture2D() here would drop 1 of every 4 pixels and
+	 * show up as ragged steps along every diagonal. Blend the 2x2 neighbourhood
+	 * explicitly instead -- that turns the 2x canvas into a proper supersampled
+	 * downsample and leaves the pixel art edges smooth rather than shattered. */
+	if (scale.x < 1.0 || scale.y < 1.0)
+	{
+		vec2 texel = 1.0 / texSize;
+		vec2 pos = v_texCoord * texSize - 0.5;
+		vec2 f = fract(pos);
+		vec2 base = (floor(pos) + 0.5) * texel;
+
+		vec4 c00 = texture2D(texture, base);
+		vec4 c10 = texture2D(texture, base + vec2(texel.x, 0.0));
+		vec4 c01 = texture2D(texture, base + vec2(0.0, texel.y));
+		vec4 c11 = texture2D(texture, base + texel);
+
+		gl_FragColor = mix(mix(c00, c10, f.x), mix(c01, c11, f.x), f.y);
+		return;
+	}
+
 	vec2 pos = v_texCoord * texSize;
 
 	/* Half-width of the blend band, in fractions of one source texel.
