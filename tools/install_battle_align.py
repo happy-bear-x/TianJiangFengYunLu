@@ -7,6 +7,7 @@ What it cannot fix is everything that still uses the authored 640-space
 coordinate system:
 
   * enemy / actor sprites          (Sprite_Battler#update -> screen_x)
+  * target selection arrows         (Arrow_Enemy / Arrow_Actor -> screen_x)
   * the battle timer                (Sprite_Timer -> 640 - width)
   * the sub-screen backdrop arts    (Scene_Battle @back.x = 0 / 89)
   * every window                    (Window_Base#initialize, handled in
@@ -86,10 +87,49 @@ def patch_battle_backdrops(text):
     return text
 
 
+def patch_arrow_enemy(text):
+    """选敌指针（红三角）。
+
+    Arrow_Enemy#update 直接 self.x = enemy.screen_x，和 Sprite_Battler 用的是
+    同一套 640 坐标。Sprite_Battler 加了偏移、指针没加，箭头就会停在敌人
+    左边 $tj_ui_shift 的位置 —— 玩家会以为"点在空地上了"。
+    """
+    old = """    # 设置活动块坐标
+    if self.enemy != nil
+      self.x = self.enemy.screen_x
+      self.y = self.enemy.screen_y
+    end"""
+    new = """    # 设置活动块坐标
+    # 敌人站位在宽屏下整体右移，指针必须跟着走，否则会停在旧的左侧位置
+    if self.enemy != nil
+      self.x = self.enemy.screen_x + """ + SHIFT + """
+      self.y = self.enemy.screen_y
+    end"""
+    return replace_once(text, old, new, "Arrow_Enemy#update x")
+
+
+def patch_arrow_actor(text):
+    """选我方角色的指针，道理同 Arrow_Enemy。"""
+    old = """    # 设置活动块坐标
+    if self.actor != nil
+      self.x = self.actor.screen_x
+      self.y = self.actor.screen_y
+    end"""
+    new = """    # 设置活动块坐标
+    # 与 Arrow_Enemy 同理：角色站位右移了，指针要跟
+    if self.actor != nil
+      self.x = self.actor.screen_x + """ + SHIFT + """
+      self.y = self.actor.screen_y
+    end"""
+    return replace_once(text, old, new, "Arrow_Actor#update x")
+
+
 PATCHERS = {
     "Sprite_Battler": patch_sprite_battler,
     "Sprite_Timer": patch_sprite_timer,
     "Scene_Battle 3新": patch_battle_backdrops,
+    "Arrow_Enemy": patch_arrow_enemy,
+    "Arrow_Actor": patch_arrow_actor,
 }
 
 
