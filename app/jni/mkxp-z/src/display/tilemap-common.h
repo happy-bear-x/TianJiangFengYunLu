@@ -89,6 +89,17 @@ enum AtSubPos
 	BottomRightTable = 5
 };
 
+/* Distance between two quarter tiles of an autotile pattern. Classic
+ * tiles are 32 px, so the quarter is 16; with hdScale > 1 both the quarter
+ * size and this step scale with it. Missing this leaves a 16 px transparent
+ * band on the right/bottom of every autotiled cell, which shows up as a
+ * black grid over the whole map. */
+static inline int
+tjSubUnit()
+{
+	return 16 * ((tjHdScale > 1) ? tjHdScale : 1);
+}
+
 static inline void
 atSelectSubPos(FloatRect &pos, int i)
 {
@@ -97,21 +108,21 @@ atSelectSubPos(FloatRect &pos, int i)
 	case TopLeft:
 		return;
 	case TopRight:
-		pos.x += 16;
+		pos.x += tjSubUnit();
 		return;
 	case BottomLeft:
-		pos.y += 16;
+		pos.y += tjSubUnit();
 		return;
 	case BottomRight:
-		pos.x += 16;
-		pos.y += 16;
+		pos.x += tjSubUnit();
+		pos.y += tjSubUnit();
 		return;
 	case BottomLeftTable:
-		pos.y += 24;
+		pos.y += tjSubUnit() * 3 / 2;
 		return;
 	case BottomRightTable:
-		pos.x += 16;
-		pos.y += 24;
+		pos.x += tjSubUnit();
+		pos.y += tjSubUnit() * 3 / 2;
 		return;
 	default:
 		assert(!"Unreachable");
