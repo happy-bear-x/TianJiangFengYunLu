@@ -31,7 +31,10 @@ public class BootstrapActivity extends Activity {
 
     private static final String TAG = "TianJiang[Boot]";
     private static final String GAME_DIR = "game";
-    static final String READY_FILE = ".ready_v28";
+    // 改名会触发整包重新解压（存档先备份再还原）。改的是 game.zip 里的
+    // 图片/音频时**必须**跟着改这个版本号，否则老玩家目录里还是旧素材
+    // —— core.zip 每次启动都会覆盖，但 game.zip 只在首次解压时用。
+    static final String READY_FILE = ".ready_v29";
     private static final String GAME_ZIP = "game.zip";
     private static final String CORE_ZIP = "core.zip";
     private static final String SAVE_BACKUP = "game_save_backup";
