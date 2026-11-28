@@ -12,9 +12,9 @@
  * the centre: edges stay crisp, while the pixel grid advances evenly.
  * At 1:1 the band collapses to a single point and this is exact nearest.
  * When the destination is smaller than the source (the usual HD case: a
- * 2x canvas squeezed into a smaller window) we switch to a 4x4 Catmull-Rom
- * filter instead, which is wide enough to actually suppress the stair-steps
- * without smearing the pixel art the way plain bilinear does.
+ * 2x canvas squeezed into a smaller window) we switch to a 6x6 Lanczos-3
+ * filter instead, whose wider support and negative lobes both suppress the
+ * stair-steps and keep sprite outlines resolved rather than smeared.
  */
 
 #ifdef GL_FRAGMENT_PRECISION_HIGH
@@ -31,19 +31,30 @@ uniform vec2 destSize;  /* destination size in pixels */
 
 varying vec2 v_texCoord;
 
-/* Catmull-Rom kernel. Used only on the downscale path: the canvas is 2x the
+/* Lanczos-3 kernel. Used only on the downscale path: the canvas is 2x the
  * logical resolution and the window is smaller, so this blit has to average
- * ~1.33 source texels per destination pixel. A 2x2 bilinear tap is too narrow
- * for that footprint -- it keeps the stair-steps on every sprite outline and
- * leaves the pixel blocks uneven -- so we use the full 4x4 support. */
-float tjCrWeight(float x)
+ * ~1.33 source texels per destination pixel.
+ *
+ * A 2x2 bilinear tap is far too narrow for that footprint. Catmull-Rom (4x4)
+ * fixed most of the stair-steps but still leaves sprite outlines slightly
+ * soft, because its positive lobe is broad and it has no negative lobe to
+ * restore the edge contrast. Lanczos-3 has both a wider support (6 taps,
+ * enough to cover the footprint) and negative lobes, so it resolves the
+ * outline instead of averaging it away -- on sprite contours that is the
+ * difference between a grey smear and a solid black line.
+ *
+ * The lobe also overshoots around hard edges (ringing), so the accumulated
+ * result is clamped back into [0,1] below; on pixel art with flat colour
+ * fills the overshoot is small and only shows as a subtle edge crispening. */
+float tjLz3Weight(float x)
 {
 	float ax = abs(x);
-	if (ax <= 1.0)
-		return 1.5*ax*ax*ax - 2.5*ax*ax + 1.0;
-	if (ax <= 2.0)
-		return -0.5*ax*ax*ax + 2.5*ax*ax - 4.0*ax + 2.0;
-	return 0.0;
+	if (ax < 0.0001)
+		return 1.0;
+	if (ax >= 3.0)
+		return 0.0;
+	float px = 3.14159265 * ax;
+	return 3.0 * sin(px) * sin(px / 3.0) / (px * px);
 }
 
 void main()
@@ -64,19 +75,21 @@ void main()
 		vec4 sum = vec4(0.0);
 		float wsum = 0.0;
 
-		for (int j = -1; j <= 2; ++j)
+		/* 6x6 support (radius 3, taps -2..+3 about the sample position). */
+		for (int j = -2; j <= 3; ++j)
 		{
-			float wy = tjCrWeight(float(j) - f.y);
-			for (int i = -1; i <= 2; ++i)
+			float wy = tjLz3Weight(float(j) - f.y);
+			for (int i = -2; i <= 3; ++i)
 			{
-				float w = tjCrWeight(float(i) - f.x) * wy;
+				float w = tjLz3Weight(float(i) - f.x) * wy;
 				vec2 p = (base + vec2(float(i), float(j)) + 0.5) / texSize;
 				sum += texture2D(texture, clamp(p, lo, hi)) * w;
 				wsum += w;
 			}
 		}
 
-		gl_FragColor = sum / max(wsum, 0.0001);
+		/* Negative lobes push values outside [0,1] on hard edges. */
+		gl_FragColor = clamp(sum / max(wsum, 0.0001), 0.0, 1.0);
 		return;
 	}
 
